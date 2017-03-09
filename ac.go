@@ -4,15 +4,11 @@ import (
 	"fmt"
 )
 
-import (
-	"github.com/anknown/darts"
-)
-
 const FAIL_STATE = -1
 const ROOT_STATE = 1
 
 type Machine struct {
-	trie    *godarts.DoubleArrayTrie
+	trie    *DoubleArrayTrie
 	failure []int
 	output  map[int]([][]rune)
 }
@@ -27,9 +23,9 @@ func (m *Machine) Build(keywords [][]rune) (err error) {
 		return fmt.Errorf("empty keywords")
 	}
 
-	d := new(godarts.Darts)
+	d := new(Darts)
 
-	trie := new(godarts.LinkedListTrie)
+	trie := new(LinkedListTrie)
 	m.trie, trie, err = d.Build(keywords)
 	if err != nil {
 		return err
@@ -40,10 +36,10 @@ func (m *Machine) Build(keywords [][]rune) (err error) {
 		m.output[idx] = append(m.output[idx], val)
 	}
 
-	queue := make([](*godarts.LinkedListTrieNode), 0)
+	queue := make([](*LinkedListTrieNode), 0)
 	m.failure = make([]int, len(m.trie.Base))
 	for _, c := range trie.Root.Children {
-		m.failure[c.Base] = godarts.ROOT_NODE_BASE
+		m.failure[c.Base] = ROOT_NODE_BASE
 	}
 	queue = append(queue, trie.Root.Children...)
 
@@ -54,12 +50,12 @@ func (m *Machine) Build(keywords [][]rune) (err error) {
 
 		node := queue[0]
 		for _, n := range node.Children {
-			if n.Base == godarts.END_NODE_BASE {
+			if n.Base == END_NODE_BASE {
 				continue
 			}
 			inState := m.f(node.Base)
 		set_state:
-			outState := m.g(inState, n.Code-godarts.ROOT_NODE_BASE)
+			outState := m.g(inState, n.Code-ROOT_NODE_BASE)
 			if outState == FAIL_STATE {
 				inState = m.f(inState)
 				goto set_state
@@ -105,7 +101,7 @@ func (m *Machine) g(inState int, input rune) (outState int) {
 		return ROOT_STATE
 	}
 
-	t := inState + int(input) + godarts.ROOT_NODE_BASE
+	t := inState + int(input) + ROOT_NODE_BASE
 	if t >= len(m.trie.Base) {
 		if inState == ROOT_STATE {
 			return ROOT_STATE

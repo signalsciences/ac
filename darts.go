@@ -66,7 +66,8 @@ func (k dartsKeySlice) Less(i, j int) bool {
 		pos++
 	}
 
-	return false
+	// can't be reached
+	//return false
 }
 
 func (k dartsKeySlice) Swap(i, j int) {

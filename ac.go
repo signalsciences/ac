@@ -60,7 +60,7 @@ func (m *Machine) Build(keywords [][]rune) (err error) {
 				inState = m.f(inState)
 				goto set_state
 			}
-			if _, ok := m.output[outState]; ok != false {
+			if _, ok := m.output[outState]; !ok {
 				m.output[n.Base] = append(m.output[outState], m.output[n.Base]...)
 			}
 			m.setF(n.Base, outState)
@@ -138,7 +138,7 @@ func (m *Machine) MultiPatternSearch(content []rune, returnImmediately bool) [](
 			goto start
 		} else {
 			state = m.g(state, c)
-			if val, ok := m.output[state]; ok != false {
+			if val, ok := m.output[state]; !ok {
 				for _, word := range val {
 					term := new(Term)
 					term.Pos = pos - len(word) + 1

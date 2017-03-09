@@ -12,9 +12,9 @@ const ROOT_NODE_INDEX = 0
 
 //Linked List Trie
 type LinkedListTrieNode struct {
-	Code                            rune
+	Code                            byte
 	Depth, Left, Right, Index, Base int
-	SubKey                          []rune
+	SubKey                          []byte
 	Children                        [](*LinkedListTrieNode)
 }
 
@@ -28,7 +28,7 @@ type DoubleArrayTrie struct {
 	Check []int
 }
 
-type dartsKey []rune
+type dartsKey []byte
 type dartsKeySlice []dartsKey
 
 type Darts struct {
@@ -37,7 +37,7 @@ type Darts struct {
 	used         []bool
 	nextCheckPos int
 	key          dartsKeySlice
-	Output       map[int]([]rune)
+	Output       map[int]([]byte)
 }
 
 func (k dartsKeySlice) Len() int {
@@ -97,7 +97,7 @@ func (dat *DoubleArrayTrie) PrintTrie() {
 	fmt.Printf("+-----+-----+-----+\n")
 }
 
-func (d *Darts) Build(keywords [][]rune) (*DoubleArrayTrie, *LinkedListTrie, error) {
+func (d *Darts) Build(keywords [][]byte) (*DoubleArrayTrie, *LinkedListTrie, error) {
 	if len(keywords) == 0 {
 		return nil, nil, fmt.Errorf("empty keywords")
 	}
@@ -111,7 +111,7 @@ func (d *Darts) Build(keywords [][]rune) (*DoubleArrayTrie, *LinkedListTrie, err
 	}
 	sort.Sort(d.key)
 
-	d.Output = make(map[int]([]rune), len(d.key))
+	d.Output = make(map[int]([]byte), len(d.key))
 	d.dat.Base[0] = ROOT_NODE_BASE
 	d.nextCheckPos = 0
 
@@ -151,7 +151,7 @@ func (d *Darts) resize(size int) {
 func (d *Darts) fetch(parent *LinkedListTrieNode) (siblings [](*LinkedListTrieNode), err error) {
 	siblings = make([](*LinkedListTrieNode), 0, 2)
 
-	var prev rune = 0
+	var prev byte = 0
 
 	for i := parent.Left; i < parent.Right; i++ {
 
@@ -161,7 +161,7 @@ func (d *Darts) fetch(parent *LinkedListTrieNode) (siblings [](*LinkedListTrieNo
 
 		tmp := d.key[i]
 
-		var cur rune = 0
+		var cur byte = 0
 		if len(d.key[i]) != parent.Depth {
 			cur = tmp[parent.Depth] + 1
 		}
@@ -171,7 +171,7 @@ func (d *Darts) fetch(parent *LinkedListTrieNode) (siblings [](*LinkedListTrieNo
 		}
 
 		if cur != prev || len(siblings) == 0 {
-			var subKey []rune
+			var subKey []byte
 			if cur != 0 {
 				subKey = append(parent.SubKey, cur-ROOT_NODE_BASE)
 			} else {
@@ -182,7 +182,7 @@ func (d *Darts) fetch(parent *LinkedListTrieNode) (siblings [](*LinkedListTrieNo
 			tmpNode.Depth = parent.Depth + 1
 			tmpNode.Code = cur
 			tmpNode.Left = i
-			tmpNode.SubKey = make([]rune, len(subKey))
+			tmpNode.SubKey = make([]byte, len(subKey))
 			copy(tmpNode.SubKey, subKey)
 			if len(siblings) != 0 {
 				siblings[len(siblings)-1].Right = i
@@ -287,7 +287,7 @@ func (d *Darts) insert(siblings [](*LinkedListTrieNode)) (int, error) {
 	return begin, nil
 }
 
-func (dat *DoubleArrayTrie) ExactMatchSearch(content []rune, nodePos int) bool {
+func (dat *DoubleArrayTrie) ExactMatchSearch(content []byte, nodePos int) bool {
 	b := dat.Base[nodePos]
 	var p int
 

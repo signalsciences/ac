@@ -89,7 +89,7 @@ func (llt *LinkedListTrie) PrintTrie() {
 func (dat *DoubleArrayTrie) PrintTrie() {
 	fmt.Printf("+-----+-----+-----+\n")
 	fmt.Printf("|%5s|%5s|%5s|\n", "id", "base", "check")
-	for idx, _ := range dat.Base {
+	for idx := range dat.Base {
 		fmt.Printf("+-----+-----+-----+\n")
 		fmt.Printf("|%5d|%5d|%5d|\n", idx, dat.Base[idx], dat.Check[idx])
 	}

@@ -226,7 +226,7 @@ func MustCompileString(dictionary []string) *Matcher {
 
 // Match searches in for blices and returns all the blices found as
 // indexes into the original dictionary
-func (m *Matcher) Match(in []byte) []int {
+func (m *Matcher) FindAllTemp(in []byte) []int {
 	m.counter++
 	var hits []int
 
@@ -266,9 +266,8 @@ func (m *Matcher) Match(in []byte) []int {
 	return hits
 }
 
-// Contains returns true if any string matches.  It can be faster if you
-// do not need to know which words matched.
-func (m *Matcher) Contains(in []byte) bool {
+// Match returns true if the input slice contains any subslices
+func (m *Matcher) Match(in []byte) bool {
 	n := m.root
 	for _, b := range in {
 		c := int(b)
@@ -276,6 +275,31 @@ func (m *Matcher) Contains(in []byte) bool {
 			n = n.fails[c]
 		}
 
+		if n.child[c] != nil {
+			f := n.child[c]
+			n = f
+
+			if f.output {
+				return true
+			}
+
+			for !f.suffix.root {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// MatchString returns true if the input slice contains any subslices
+func (m *Matcher) MatchString(in string) bool {
+	n := m.root
+	slen := len(in)
+	for idx := 0; idx < slen; idx++ {
+		c := int(in[idx])
+		if !n.root && n.child[c] == nil {
+			n = n.fails[c]
+		}
 		if n.child[c] != nil {
 			f := n.child[c]
 			n = f

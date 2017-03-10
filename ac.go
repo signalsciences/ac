@@ -224,7 +224,7 @@ func MustCompileString(dictionary []string) *Matcher {
 	return m
 }
 
-// Match searches in for blices and returns all the blices found as
+// FindAll searches in for blices and returns all the blices found as
 // indexes into the original dictionary
 func (m *Matcher) FindAll(in []byte) [][]byte {
 	m.counter++
@@ -266,7 +266,7 @@ func (m *Matcher) FindAll(in []byte) [][]byte {
 	return hits
 }
 
-// Match searches in for blices and returns all the blices found as
+// FindAllString searches in for blices and returns all the blices found as
 // indexes into the original dictionary
 func (m *Matcher) FindAllString(in string) []string {
 	m.counter++

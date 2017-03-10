@@ -127,7 +127,7 @@ var cases = []struct {
 	{
 		// this is to make sure backtracking works.  We get a partial
 		// match of "Superwoman" with "Superman".  Then we need to make
-		// sure that we restart the search and find "per".  Some implimentations
+		// sure that we restart the search and find "per".  Some implementations
 		// had bugs that didn't backtrack (really start over) and didn't match
 		// "per"
 		"Backtrack",

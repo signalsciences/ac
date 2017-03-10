@@ -1,167 +1,283 @@
+// ahocorasick.go: implementation of the Aho-Corasick string matching
+// algorithm. Actually implemented as matching against []byte rather
+// than the Go string type. Throughout this code []byte is referred to
+// as a blice.
+//
+// http://en.wikipedia.org/wiki/Aho%E2%80%93Corasick_string_matching_algorithm
+//
+// Copyright (c) 2013 CloudFlare, Inc.
+
 package ac
 
 import (
-	"fmt"
+	"container/list"
 )
 
-const FAIL_STATE = -1
-const ROOT_STATE = 1
+// A node in the trie structure used to implement Aho-Corasick
+type node struct {
+	root bool // true if this is the root
 
-type Machine struct {
-	trie    *DoubleArrayTrie
-	failure []int
-	output  map[int]([][]byte)
+	b []byte // The blice at this node
+
+	output bool // True means this node represents a blice that should
+	// be output when matching
+	index int // index into original dictionary if output is true
+
+	counter int // Set to the value of the Matcher.counter when a
+	// match is output to prevent duplicate output
+
+	// The use of fixed size arrays is space-inefficient but fast for
+	// lookups.
+
+	child [256]*node // A non-nil entry in this array means that the
+	// index represents a byte value which can be
+	// appended to the current node. Blices in the
+	// trie are built up byte by byte through these
+	// child node pointers.
+
+	fails [256]*node // Where to fail to (by following the fail
+	// pointers) for each possible byte
+
+	suffix *node // Pointer to the longest possible strict suffix of
+	// this node
+
+	fail *node // Pointer to the next node which is in the dictionary
+	// which can be reached from here following suffixes. Called fail
+	// because it is used to fallback in the trie when a match fails.
 }
 
-type Term struct {
-	Pos  int
-	Word []byte
+// Matcher is returned by NewMatcher and contains a list of blices to
+// match against
+type Matcher struct {
+	counter int // Counts the number of matches done, and is used to
+	// prevent output of multiple matches of the same string
+	trie []node // preallocated block of memory containing all the
+	// nodes
+	extent int   // offset into trie that is currently free
+	root   *node // Points to trie[0]
 }
 
-func (m *Machine) Build(keywords [][]byte) (err error) {
-	if len(keywords) == 0 {
-		return fmt.Errorf("empty keywords")
+// finndBlice looks for a blice in the trie starting from the root and
+// returns a pointer to the node representing the end of the blice. If
+// the blice is not found it returns nil.
+func (m *Matcher) findBlice(b []byte) *node {
+	n := &m.trie[0]
+
+	for n != nil && len(b) > 0 {
+		n = n.child[int(b[0])]
+		b = b[1:]
 	}
 
-	d := new(Darts)
+	return n
+}
 
-	trie := new(LinkedListTrie)
-	m.trie, trie, err = d.Build(keywords)
-	if err != nil {
-		return err
+// getFreeNode: gets a free node structure from the Matcher's trie
+// pool and updates the extent to point to the next free node.
+func (m *Matcher) getFreeNode() *node {
+	m.extent += 1
+
+	if m.extent == 1 {
+		m.root = &m.trie[0]
+		m.root.root = true
 	}
 
-	m.output = make(map[int]([][]byte), 0)
-	for idx, val := range d.Output {
-		m.output[idx] = append(m.output[idx], val)
+	return &m.trie[m.extent-1]
+}
+
+// buildTrie builds the fundamental trie structure from a set of
+// blices.
+func (m *Matcher) buildTrie(dictionary [][]byte) {
+
+	// Work out the maximum size for the trie (all dictionary entries
+	// are distinct plus the root). This is used to preallocate memory
+	// for it.
+
+	max := 1
+	for _, blice := range dictionary {
+		max += len(blice)
 	}
+	m.trie = make([]node, max)
 
-	queue := make([](*LinkedListTrieNode), 0)
-	m.failure = make([]int, len(m.trie.Base))
-	for _, c := range trie.Root.Children {
-		m.failure[c.Base] = ROOT_NODE_BASE
-	}
-	queue = append(queue, trie.Root.Children...)
+	// Calling this an ignoring its argument simply allocated
+	// m.trie[0] which will be the root element
 
-	for {
-		if len(queue) == 0 {
-			break
-		}
+	m.getFreeNode()
 
-		node := queue[0]
-		for _, n := range node.Children {
-			if n.Base == END_NODE_BASE {
-				continue
+	// This loop builds the nodes in the trie by following through
+	// each dictionary entry building the children pointers.
+
+	for i, blice := range dictionary {
+		n := m.root
+		var path []byte
+		for _, b := range blice {
+			path = append(path, b)
+
+			c := n.child[int(b)]
+
+			if c == nil {
+				c = m.getFreeNode()
+				n.child[int(b)] = c
+				c.b = make([]byte, len(path))
+				copy(c.b, path)
+
+				// Nodes directly under the root node will have the
+				// root as their fail point as there are no suffixes
+				// possible.
+
+				if len(path) == 1 {
+					c.fail = m.root
+				}
+
+				c.suffix = m.root
 			}
-			inState := m.f(node.Base)
-		set_state:
-			outState := m.g(inState, n.Code-ROOT_NODE_BASE)
-			if outState == FAIL_STATE {
-				inState = m.f(inState)
-				goto set_state
-			}
-			if _, ok := m.output[outState]; !ok {
-				m.output[n.Base] = append(m.output[outState], m.output[n.Base]...)
-			}
-			m.setF(n.Base, outState)
+
+			n = c
 		}
-		queue = append(queue, node.Children...)
-		queue = queue[1:]
+
+		// The last value of n points to the node representing a
+		// dictionary entry
+
+		n.output = true
+		n.index = i
 	}
 
-	return nil
-}
+	l := new(list.List)
+	l.PushBack(m.root)
 
-func (m *Machine) PrintFailure() {
-	fmt.Printf("+-----+-----+\n")
-	fmt.Printf("|%5s|%5s|\n", "index", "value")
-	fmt.Printf("+-----+-----+\n")
-	for i, v := range m.failure {
-		fmt.Printf("|%5d|%5d|\n", i, v)
-	}
-	fmt.Printf("+-----+-----+\n")
-}
+	for l.Len() > 0 {
+		n := l.Remove(l.Front()).(*node)
 
-func (m *Machine) PrintOutput() {
-	fmt.Printf("+-----+----------+\n")
-	fmt.Printf("|%5s|%10s|\n", "index", "value")
-	fmt.Printf("+-----+----------+\n")
-	for i, v := range m.output {
-		var val string
-		for _, o := range v {
-			val = val + " " + string(o)
-		}
-		fmt.Printf("|%5d|%10s|\n", i, val)
-	}
-	fmt.Printf("+-----+----------+\n")
-}
+		for i := 0; i < 256; i++ {
+			c := n.child[i]
+			if c != nil {
+				l.PushBack(c)
 
-func (m *Machine) g(inState int, input byte) (outState int) {
-	if inState == FAIL_STATE {
-		return ROOT_STATE
-	}
+				for j := 1; j < len(c.b); j++ {
+					c.fail = m.findBlice(c.b[j:])
+					if c.fail != nil {
+						break
+					}
+				}
 
-	t := inState + int(input) + ROOT_NODE_BASE
-	if t >= len(m.trie.Base) {
-		if inState == ROOT_STATE {
-			return ROOT_STATE
-		}
-		return FAIL_STATE
-	}
-	if inState == m.trie.Check[t] {
-		return m.trie.Base[t]
-	}
+				if c.fail == nil {
+					c.fail = m.root
+				}
 
-	if inState == ROOT_STATE {
-		return ROOT_STATE
-	}
-
-	return FAIL_STATE
-}
-
-func (m *Machine) f(index int) (state int) {
-	return m.failure[index]
-}
-
-func (m *Machine) setF(inState, outState int) {
-	m.failure[inState] = outState
-}
-
-func (m *Machine) MultiPatternSearch(content []byte, returnImmediately bool) [](*Term) {
-	terms := make([](*Term), 0)
-
-	state := ROOT_STATE
-	for pos, c := range content {
-	start:
-		if m.g(state, c) == FAIL_STATE {
-			state = m.f(state)
-			goto start
-		} else {
-			state = m.g(state, c)
-			if val, ok := m.output[state]; !ok {
-				for _, word := range val {
-					term := new(Term)
-					term.Pos = pos - len(word) + 1
-					term.Word = word
-					terms = append(terms, term)
-					if returnImmediately {
-						return terms
+				for j := 1; j < len(c.b); j++ {
+					s := m.findBlice(c.b[j:])
+					if s != nil && s.output {
+						c.suffix = s
+						break
 					}
 				}
 			}
 		}
 	}
 
-	return terms
-}
+	for i := 0; i < m.extent; i++ {
+		for c := 0; c < 256; c++ {
+			n := &m.trie[i]
+			for n.child[c] == nil && !n.root {
+				n = n.fail
+			}
 
-func (m *Machine) ExactSearch(content []byte) [](*Term) {
-	if m.trie.ExactMatchSearch(content, 0) {
-		t := new(Term)
-		t.Word = content
-		t.Pos = 0
-		return [](*Term){t}
+			m.trie[i].fails[c] = n
+		}
 	}
 
-	return nil
+	m.trie = m.trie[:m.extent]
+}
+
+// NewMatcher creates a new Matcher used to match against a set of
+// blices
+func NewMatcher(dictionary [][]byte) *Matcher {
+	m := new(Matcher)
+
+	m.buildTrie(dictionary)
+
+	return m
+}
+
+// NewStringMatcher creates a new Matcher used to match against a set
+// of strings (this is a helper to make initialization easy)
+func NewStringMatcher(dictionary []string) *Matcher {
+	m := new(Matcher)
+
+	var d [][]byte
+	for _, s := range dictionary {
+		d = append(d, []byte(s))
+	}
+
+	m.buildTrie(d)
+
+	return m
+}
+
+// Match searches in for blices and returns all the blices found as
+// indexes into the original dictionary
+func (m *Matcher) Match(in []byte) []int {
+	m.counter += 1
+	var hits []int
+
+	n := m.root
+
+	for _, b := range in {
+		c := int(b)
+
+		if !n.root && n.child[c] == nil {
+			n = n.fails[c]
+		}
+
+		if n.child[c] != nil {
+			f := n.child[c]
+			n = f
+
+			if f.output && f.counter != m.counter {
+				hits = append(hits, f.index)
+				f.counter = m.counter
+			}
+
+			for !f.suffix.root {
+				f = f.suffix
+				if f.counter != m.counter {
+					hits = append(hits, f.index)
+					f.counter = m.counter
+				} else {
+					// There's no point working our way up the
+					// suffixes if it's been done before for this call
+					// to Match. The matches are already in hits.
+					break
+				}
+			}
+		}
+	}
+
+	return hits
+}
+
+// This returns true if any string matches.  It can be faster if you
+// do not need to know which words matched.
+
+func (m *Matcher) Contains(in []byte) bool {
+	n := m.root
+	for _, b := range in {
+		c := int(b)
+		if !n.root && n.child[c] == nil {
+			n = n.fails[c]
+		}
+
+		if n.child[c] != nil {
+			f := n.child[c]
+			n = f
+
+			if f.output {
+				return true
+			}
+
+			for !f.suffix.root {
+				return true
+			}
+		}
+	}
+	return false
 }

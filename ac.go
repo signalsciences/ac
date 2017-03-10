@@ -188,19 +188,26 @@ func (m *Matcher) buildTrie(dictionary [][]byte) {
 	m.trie = m.trie[:m.extent]
 }
 
-// NewMatcher creates a new Matcher used to match against a set of
-// blices
-func NewMatcher(dictionary [][]byte) *Matcher {
+// Compile creates a new Matcher using a list of []byte
+func Compile(dictionary [][]byte) (*Matcher, error) {
 	m := new(Matcher)
-
 	m.buildTrie(dictionary)
+	// no error for now
+	return m, nil
+}
 
+// MustCompile returns a Matcher or panics
+func MustCompile(dictionary [][]byte) *Matcher {
+	m, err := Compile(dictionary)
+	if err != nil {
+		panic(err)
+	}
 	return m
 }
 
-// NewStringMatcher creates a new Matcher used to match against a set
+// CompileString creates a new Matcher used to match against a set
 // of strings (this is a helper to make initialization easy)
-func NewStringMatcher(dictionary []string) *Matcher {
+func CompileString(dictionary []string) (*Matcher, error) {
 	m := new(Matcher)
 
 	var d [][]byte
@@ -209,7 +216,16 @@ func NewStringMatcher(dictionary []string) *Matcher {
 	}
 
 	m.buildTrie(d)
+	// no error for now
+	return m, nil
+}
 
+// MustCompileString returns a Matcher or panics
+func MustCompileString(dictionary []string) *Matcher {
+	m, err := CompileString(dictionary)
+	if err != nil {
+		panic(err)
+	}
 	return m
 }
 

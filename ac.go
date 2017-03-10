@@ -106,7 +106,7 @@ func (m *Matcher) buildTrie(dictionary [][]byte) {
 	// This loop builds the nodes in the trie by following through
 	// each dictionary entry building the children pointers.
 
-	for i, blice := range dictionary {
+	for _, blice := range dictionary {
 		n := m.root
 		var path []byte
 		for _, b := range blice {
@@ -138,7 +138,7 @@ func (m *Matcher) buildTrie(dictionary [][]byte) {
 		// dictionary entry
 
 		n.output = true
-		n.index = i
+		n.index = len(blice)
 	}
 
 	l := new(list.List)
@@ -226,13 +226,13 @@ func MustCompileString(dictionary []string) *Matcher {
 
 // Match searches in for blices and returns all the blices found as
 // indexes into the original dictionary
-func (m *Matcher) FindAllTemp(in []byte) []int {
+func (m *Matcher) FindAll(in []byte) [][]byte {
 	m.counter++
-	var hits []int
+	var hits [][]byte
 
 	n := m.root
 
-	for _, b := range in {
+	for idx, b := range in {
 		c := int(b)
 
 		if !n.root && n.child[c] == nil {
@@ -244,14 +244,56 @@ func (m *Matcher) FindAllTemp(in []byte) []int {
 			n = f
 
 			if f.output && f.counter != m.counter {
-				hits = append(hits, f.index)
+				hits = append(hits, in[idx-f.index+1:idx+1])
 				f.counter = m.counter
 			}
 
 			for !f.suffix.root {
 				f = f.suffix
 				if f.counter != m.counter {
-					hits = append(hits, f.index)
+					hits = append(hits, in[idx-f.index+1:idx+1])
+					f.counter = m.counter
+				} else {
+					// There's no point working our way up the
+					// suffixes if it's been done before for this call
+					// to Match. The matches are already in hits.
+					break
+				}
+			}
+		}
+	}
+
+	return hits
+}
+
+// Match searches in for blices and returns all the blices found as
+// indexes into the original dictionary
+func (m *Matcher) FindAllString(in string) []string {
+	m.counter++
+	var hits []string
+
+	n := m.root
+	slen := len(in)
+	for idx := 0; idx < slen; idx++ {
+		c := int(in[idx])
+
+		if !n.root && n.child[c] == nil {
+			n = n.fails[c]
+		}
+
+		if n.child[c] != nil {
+			f := n.child[c]
+			n = f
+
+			if f.output && f.counter != m.counter {
+				hits = append(hits, in[idx-f.index+1:idx+1])
+				f.counter = m.counter
+			}
+
+			for !f.suffix.root {
+				f = f.suffix
+				if f.counter != m.counter {
+					hits = append(hits, in[idx-f.index+1:idx+1])
 					f.counter = m.counter
 				} else {
 					// There's no point working our way up the

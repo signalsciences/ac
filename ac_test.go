@@ -162,6 +162,7 @@ func TestAC(t *testing.T) {
 }
 
 var source1 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36"
+var source1b = []byte(source1)
 var dict1 = []string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"}
 var dict2 = []string{"Googlebot", "bingbot", "msnbot", "Yandex", "Baiduspider"}
 var re1 = MustCompileString(dict1)
@@ -182,6 +183,13 @@ func BenchmarkAC2(b *testing.B) {
 	var result bool
 	for i := 0; i < b.N; i++ {
 		result = re2.MatchString(source1)
+	}
+	result1 = result
+}
+func BenchmarkAC2Byte(b *testing.B) {
+	var result bool
+	for i := 0; i < b.N; i++ {
+		result = re2.Match(source1b)
 	}
 	result1 = result
 }

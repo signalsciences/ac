@@ -208,16 +208,11 @@ func MustCompile(dictionary [][]byte) *Matcher {
 // CompileString creates a new Matcher used to match against a set
 // of strings (this is a helper to make initialization easy)
 func CompileString(dictionary []string) (*Matcher, error) {
-	m := new(Matcher)
-
-	var d [][]byte
-	for _, s := range dictionary {
-		d = append(d, []byte(s))
+	d := make([][]byte, len(dictionary))
+	for idx, word := range dictionary {
+		d[idx] = []byte(word)
 	}
-
-	m.buildTrie(d)
-	// no error for now
-	return m, nil
+	return Compile(d)
 }
 
 // MustCompileString returns a Matcher or panics

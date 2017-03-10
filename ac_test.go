@@ -6,7 +6,7 @@ import (
 )
 
 var cases = []struct {
-	name    string
+	name    string // matches original test name from cloudflare/ahocorasick
 	dict    []string
 	input   string
 	matches []string
@@ -125,10 +125,15 @@ var cases = []struct {
 		nil,
 	},
 	{
+		// this is to make sure backtracking works.  We get a partial
+		// match of "Superwoman" with "Superman".  Then we need to make
+		// sure that we restart the search and find "per".  Some implimentations
+		// had bugs that didn't backtrack (really start over) and didn't match
+		// "per"
 		"Backtrack",
-		[]string{"Superwoman", "Super"},
+		[]string{"Superwoman", "per"},
 		"The Man Of Steel: Superman",
-		[]string{"Super"},
+		[]string{"per"},
 	},
 }
 

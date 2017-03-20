@@ -2,7 +2,9 @@
 Golang implimentation of Aho-Corasick for rapid substring matching on byte
 strings.
 
-This was based from the excellent library
+[![Build Status](https://travis-ci.org/signalsciences/ac.svg?branch=master)](https://travis-ci.org/signalsciences/ac)
+
+This is based on the excellent library
 [cloudflare/ahocorasick](https://github.com/cloudflare/ahocorasick) (BSD
 License).  The fork/changes were needed for a specific application usages
 that are incomptabile with the original library.

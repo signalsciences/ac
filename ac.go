@@ -17,10 +17,11 @@ import (
 type node struct {
 	root bool // true if this is the root
 
-	b []byte // The blice at this node
-
 	output bool // True means this node represents a blice that should
 	// be output when matching
+
+	b []byte // The blice at this node
+
 	index int // index into original dictionary if output is true
 
 	counter int // Set to the value of the Matcher.counter when a

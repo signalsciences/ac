@@ -1,4 +1,4 @@
-// ahocorasick.go: implementation of the Aho-Corasick string matching
+// Package ac provdes and implementation of the Aho-Corasick string matching
 // algorithm. Throughout this code []byte is referred to
 // as a blice.
 //

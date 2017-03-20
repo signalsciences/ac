@@ -1,12 +1,12 @@
 // ahocorasick.go: implementation of the Aho-Corasick string matching
-// algorithm. Actually implemented as matching against []byte rather
-// than the Go string type. Throughout this code []byte is referred to
+// algorithm. Throughout this code []byte is referred to
 // as a blice.
 //
 // http://en.wikipedia.org/wiki/Aho%E2%80%93Corasick_string_matching_algorithm
 //
 // Copyright (c) 2013 CloudFlare, Inc.
-
+//
+// Originally from https://github.com/cloudflare/ahocorasick
 package ac
 
 import (

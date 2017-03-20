@@ -1,14 +1,16 @@
 # ac
-temp repo for fooling around with Aho-Corasick
+Golang implimentation of Aho-Corasick for rapid substring matching on byte
+strings.
 
-This was based from the excellent library cloudflare/ahocorasick (BSD
+This was based from the excellent library
+[cloudflare/ahocorasick](https://github.com/cloudflare/ahocorasick) (BSD
 License).  The fork/changes were needed for a specific application usages
 that are incomptabile with the original library.
 
 ## NOTES
 
 * This is designed for ASCII pattern matching at the byte level.
-  There is no rune support, no UTF-8 support (other than ASCII).  
+  There is no rune support, no UTF-8 support (other than the ASCII subset).
 * Similar API to `regexp` package.
 * Byte and String-based API work the same.  Again, there is no UTF-8 support.
 

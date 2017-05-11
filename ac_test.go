@@ -168,10 +168,11 @@ func TestAC(t *testing.T) {
 
 func TestACBlices(t *testing.T) {
 	for _, tt := range cases {
-		m, err := CompileString(tt.dict)
-		if err != nil {
-			t.Fatalf("%s:unable to compile %s", tt.name, err)
+		var dict [][]byte
+		for _, d := range tt.dict {
+			dict = append(dict, []byte(d))
 		}
+		m := MustCompile(dict)
 
 		matches := m.FindAll([]byte(tt.input))
 		var mb [][]byte

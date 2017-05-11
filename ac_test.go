@@ -179,18 +179,18 @@ func TestACBlices(t *testing.T) {
 			mb = append(mb, []byte(m))
 		}
 		if !reflect.DeepEqual(matches, mb) {
-			t.Errorf("%s: FindAll want %v, got %v", tt.name, tt.matches, matches)
+			t.Errorf("%s: FindAll = %v, want %v", tt.name, mb, matches)
 		}
 
 		contains := m.Match([]byte(tt.input))
 		if contains {
 			if len(tt.matches) == 0 {
-				t.Errorf("%s: MatchString want false, but got true", tt.name)
+				t.Errorf("%s: MatchString = true, want false", tt.name)
 			}
 		} else {
 			// does not contain, but got matches
 			if len(tt.matches) != 0 {
-				t.Errorf("%s: Match want true, but got false", tt.name)
+				t.Errorf("%s: Match = false, want true", tt.name)
 			}
 		}
 

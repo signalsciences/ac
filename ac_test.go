@@ -174,12 +174,9 @@ func TestACBlices(t *testing.T) {
 		}
 
 		matches := m.FindAll([]byte(tt.input))
-		mb := [][]byte{}
+		var mb [][]byte
 		for _, m := range matches {
 			mb = append(mb, []byte(m))
-		}
-		if len(matches) == 0 && len(mb) == 0 {
-			continue
 		}
 		if !reflect.DeepEqual(matches, mb) {
 			t.Errorf("%s: FindAll want %v, got %v", tt.name, tt.matches, matches)

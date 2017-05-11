@@ -166,6 +166,40 @@ func TestAC(t *testing.T) {
 	}
 }
 
+func TestACBlices(t *testing.T) {
+	for _, tt := range cases {
+		m, err := CompileString(tt.dict)
+		if err != nil {
+			t.Fatalf("%s:unable to compile %s", tt.name, err)
+		}
+
+		matches := m.FindAll([]byte(tt.input))
+		mb := [][]byte{}
+		for _, m := range matches {
+			mb = append(mb, []byte(m))
+		}
+		if len(matches) == 0 && len(mb) == 0 {
+			continue
+		}
+		if !reflect.DeepEqual(matches, mb) {
+			t.Errorf("%s: FindAll want %v, got %v", tt.name, tt.matches, matches)
+		}
+
+		contains := m.Match([]byte(tt.input))
+		if contains {
+			if len(tt.matches) == 0 {
+				t.Errorf("%s: MatchString want false, but got true", tt.name)
+			}
+		} else {
+			// does not contain, but got matches
+			if len(tt.matches) != 0 {
+				t.Errorf("%s: Match want true, but got false", tt.name)
+			}
+		}
+
+	}
+}
+
 var source1 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36"
 var source1b = []byte(source1)
 var dict1 = []string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"}

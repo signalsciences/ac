@@ -1,5 +1,5 @@
 # ac
-Golang implimentation of Aho-Corasick for rapid substring matching on byte
+Golang implementation of Aho-Corasick for rapid substring matching on byte
 strings.
 
 [![GoDoc](https://godoc.org/github.com/signalsciences/ac?status.svg)](https://godoc.org/github.com/signalsciences/ac) [![Build Status](https://travis-ci.org/signalsciences/ac.svg?branch=master)](https://travis-ci.org/signalsciences/ac)

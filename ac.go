@@ -1,4 +1,4 @@
-// Package ac provdes and implementation of the Aho-Corasick string matching
+// Package ac provides an implementation of the Aho-Corasick string matching
 // algorithm. Throughout this code []byte is referred to
 // as a blice.
 //
@@ -58,7 +58,7 @@ type Matcher struct {
 	root   *node // Points to trie[0]
 }
 
-// finndBlice looks for a blice in the trie starting from the root and
+// findBlice looks for a blice in the trie starting from the root and
 // returns a pointer to the node representing the end of the blice. If
 // the blice is not found it returns nil.
 func (m *Matcher) findBlice(b []byte) *node {

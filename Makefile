@@ -1,4 +1,3 @@
-
 all:
 	go build ./...
 	gometalinter \

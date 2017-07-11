@@ -138,7 +138,6 @@ var cases = []struct {
 }
 
 func TestAC(t *testing.T) {
-
 	for _, tt := range cases {
 		m, err := CompileString(tt.dict)
 		if err != nil {
@@ -198,12 +197,14 @@ func TestACBlices(t *testing.T) {
 	}
 }
 
-var source1 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36"
-var source1b = []byte(source1)
-var dict1 = []string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"}
-var dict2 = []string{"Googlebot", "bingbot", "msnbot", "Yandex", "Baiduspider"}
-var re1 = MustCompileString(dict1)
-var re2 = MustCompileString(dict2)
+var (
+	source1  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36"
+	source1b = []byte(source1)
+	dict1    = []string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"}
+	dict2    = []string{"Googlebot", "bingbot", "msnbot", "Yandex", "Baiduspider"}
+	re1      = MustCompileString(dict1)
+	re2      = MustCompileString(dict2)
+)
 
 // this is to prevent optimizer tricks
 var result1 bool

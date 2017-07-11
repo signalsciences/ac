@@ -47,8 +47,7 @@ type node struct {
 	// because it is used to fallback in the trie when a match fails.
 }
 
-// Matcher is returned by NewMatcher and contains a list of blices to
-// match against
+// Matcher contains a list of blices to match against
 type Matcher struct {
 	counter int // Counts the number of matches done, and is used to
 	// prevent output of multiple matches of the same string

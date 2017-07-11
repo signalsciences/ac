@@ -1,6 +1,7 @@
 package ac
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -230,4 +231,18 @@ func BenchmarkAC2Byte(b *testing.B) {
 		result = re2.Match(source1b)
 	}
 	result1 = result
+}
+
+func ExampleFindAllString() {
+	m := MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
+	matches := m.FindAllString("The Man Of Steel: Superman")
+	fmt.Println(matches)
+	// Output: [Superman uperman perman erman]
+}
+
+func ExampleMatchString() {
+	m := MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
+	contains := m.MatchString("The Man Of Steel: Superman")
+	fmt.Println(contains)
+	// Output: true
 }

@@ -9,6 +9,36 @@ This is based on the excellent library
 License).  The fork/changes were needed for a specific application usages
 that are incomptabile with the original library.
 
+## Examples
+
+* FindAllString
+
+```
+m := ac.MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
+matches := m.FindAllString("The Man Of Steel: Superman")
+fmt.Println(matches)
+```
+
+Output:
+
+```
+[Superman uperman perman erman]
+```
+
+* MatchString
+
+```
+m := ac.MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
+contains := m.MatchString("The Man Of Steel: Superman")
+fmt.Println(contains)
+```
+
+Output:
+
+```
+true
+```
+
 ## NOTES
 
 * This is designed for ASCII pattern matching at the byte level.

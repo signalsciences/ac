@@ -413,14 +413,13 @@ func (m *Matcher) Match(in []byte) bool {
 		}
 
 		if n.child[c] != nil {
-			f := n.child[c]
-			n = f
+			n = n.child[c]
 
-			if f.output {
+			if n.output {
 				return true
 			}
 
-			for !f.suffix.root {
+			for !n.suffix.root {
 				return true
 			}
 		}
@@ -438,14 +437,13 @@ func (m *Matcher) MatchString(in string) bool {
 			n = n.fails[c]
 		}
 		if n.child[c] != nil {
-			f := n.child[c]
-			n = f
+			n = n.child[c]
 
-			if f.output {
+			if n.output {
 				return true
 			}
 
-			for !f.suffix.root {
+			for !n.suffix.root {
 				return true
 			}
 		}

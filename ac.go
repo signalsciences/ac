@@ -106,9 +106,10 @@ func (m *Matcher) buildTrie(dictionary [][]byte) {
 	// This loop builds the nodes in the trie by following through
 	// each dictionary entry building the children pointers.
 
+	var path []byte
 	for _, blice := range dictionary {
 		n := m.root
-		var path []byte
+		path = path[:0]
 		for _, b := range blice {
 			path = append(path, b)
 

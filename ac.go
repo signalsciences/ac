@@ -20,7 +20,7 @@ type node struct {
 	output bool // True means this node represents a blice that should
 	// be output when matching
 
-	b []byte // The blice at this node
+	b string // The path at this node
 
 	index int // index into original dictionary if output is true
 
@@ -60,7 +60,7 @@ type Matcher struct {
 // findBlice looks for a blice in the trie starting from the root and
 // returns a pointer to the node representing the end of the blice. If
 // the blice is not found it returns nil.
-func (m *Matcher) findBlice(b []byte) *node {
+func (m *Matcher) findBlice(b string) *node {
 	n := &m.trie[0]
 
 	for n != nil && len(b) > 0 {
@@ -106,26 +106,22 @@ func (m *Matcher) buildTrie(dictionary [][]byte) {
 	// This loop builds the nodes in the trie by following through
 	// each dictionary entry building the children pointers.
 
-	var path []byte
 	for _, blice := range dictionary {
 		n := m.root
-		path = path[:0]
-		for _, b := range blice {
-			path = append(path, b)
+		for i, b := range blice {
 
 			c := n.child[int(b)]
 
 			if c == nil {
 				c = m.getFreeNode()
 				n.child[int(b)] = c
-				c.b = make([]byte, len(path))
-				copy(c.b, path)
+				c.b = string(blice[0 : i+1])
 
 				// Nodes directly under the root node will have the
 				// root as their fail point as there are no suffixes
 				// possible.
 
-				if len(path) == 1 {
+				if i == 0 {
 					c.fail = m.root
 				}
 
@@ -199,6 +195,7 @@ func (m *Matcher) buildTrieString(dictionary []string) {
 	max := 1
 	for _, blice := range dictionary {
 		max += len(blice)
+
 	}
 	m.trie = make([]node, max)
 
@@ -210,27 +207,21 @@ func (m *Matcher) buildTrieString(dictionary []string) {
 	// This loop builds the nodes in the trie by following through
 	// each dictionary entry building the children pointers.
 
-	var path []byte
 	for _, blice := range dictionary {
 		n := m.root
-		path = path[:0]
 		for i := 0; i < len(blice); i++ {
-			b := byte(blice[i])
-			path = append(path, b)
-
-			c := n.child[int(b)]
-
+			b := int(blice[i])
+			c := n.child[b]
 			if c == nil {
 				c = m.getFreeNode()
-				n.child[int(b)] = c
-				c.b = make([]byte, len(path))
-				copy(c.b, path)
+				n.child[b] = c
+				c.b = blice[0 : i+1]
 
 				// Nodes directly under the root node will have the
 				// root as their fail point as there are no suffixes
 				// possible.
 
-				if len(path) == 1 {
+				if i == 0 {
 					c.fail = m.root
 				}
 

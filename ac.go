@@ -189,6 +189,111 @@ func (m *Matcher) buildTrie(dictionary [][]byte) {
 	m.trie = m.trie[:m.extent]
 }
 
+// buildTrieString builds the fundamental trie structure from a []string
+func (m *Matcher) buildTrieString(dictionary []string) {
+
+	// Work out the maximum size for the trie (all dictionary entries
+	// are distinct plus the root). This is used to preallocate memory
+	// for it.
+
+	max := 1
+	for _, blice := range dictionary {
+		max += len(blice)
+	}
+	m.trie = make([]node, max)
+
+	// Calling this an ignoring its argument simply allocated
+	// m.trie[0] which will be the root element
+
+	m.getFreeNode()
+
+	// This loop builds the nodes in the trie by following through
+	// each dictionary entry building the children pointers.
+
+	var path []byte
+	for _, blice := range dictionary {
+		n := m.root
+		path = path[:0]
+		for i := 0; i < len(blice); i++ {
+			b := byte(blice[i])
+			path = append(path, b)
+
+			c := n.child[int(b)]
+
+			if c == nil {
+				c = m.getFreeNode()
+				n.child[int(b)] = c
+				c.b = make([]byte, len(path))
+				copy(c.b, path)
+
+				// Nodes directly under the root node will have the
+				// root as their fail point as there are no suffixes
+				// possible.
+
+				if len(path) == 1 {
+					c.fail = m.root
+				}
+
+				c.suffix = m.root
+			}
+
+			n = c
+		}
+
+		// The last value of n points to the node representing a
+		// dictionary entry
+
+		n.output = true
+		n.index = len(blice)
+	}
+
+	l := new(list.List)
+	l.PushBack(m.root)
+
+	for l.Len() > 0 {
+		n := l.Remove(l.Front()).(*node)
+
+		for i := 0; i < 256; i++ {
+			c := n.child[i]
+			if c != nil {
+				l.PushBack(c)
+
+				for j := 1; j < len(c.b); j++ {
+					c.fail = m.findBlice(c.b[j:])
+					if c.fail != nil {
+						break
+					}
+				}
+
+				if c.fail == nil {
+					c.fail = m.root
+				}
+
+				for j := 1; j < len(c.b); j++ {
+					s := m.findBlice(c.b[j:])
+					if s != nil && s.output {
+						c.suffix = s
+						break
+					}
+				}
+			}
+		}
+	}
+
+	for i := 0; i < m.extent; i++ {
+		for c := 0; c < 256; c++ {
+			n := &m.trie[i]
+			for n.child[c] == nil && !n.root {
+				n = n.fail
+			}
+
+			m.trie[i].fails[c] = n
+		}
+	}
+
+	m.trie = m.trie[:m.extent]
+}
+
 // Compile creates a new Matcher using a list of []byte
 func Compile(dictionary [][]byte) (*Matcher, error) {
 	m := new(Matcher)
@@ -209,11 +314,9 @@ func MustCompile(dictionary [][]byte) *Matcher {
 // CompileString creates a new Matcher used to match against a set
 // of strings (this is a helper to make initialization easy)
 func CompileString(dictionary []string) (*Matcher, error) {
-	d := make([][]byte, len(dictionary))
-	for idx, word := range dictionary {
-		d[idx] = []byte(word)
-	}
-	return Compile(d)
+	m := new(Matcher)
+	m.buildTrieString(dictionary)
+	return m, nil
 }
 
 // MustCompileString returns a Matcher or panics

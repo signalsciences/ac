@@ -1,24 +1,7 @@
-all:
+all: ./bin/golangci-lint
 	go build ./...
-	gometalinter \
-		--vendor \
-		--vendored-linters \
-		--deadline=60s \
-		--disable-all \
-		--enable=goimports \
-		--enable=aligncheck \
-		--enable=vetshadow \
-		--enable=varcheck \
-		--enable=structcheck \
-		--enable=deadcode \
-		--enable=ineffassign \
-		--enable=unconvert \
-		--enable=goconst \
-		--enable=golint \
-		--enable=gosimple \
-		--enable=gofmt \
-		--enable=errcheck \
-		--enable=misspell \
-		--enable=staticcheck \
-		./...
+	./bin/golangci-lint run
 	go test -cover ./...
+
+./bin/golangci-lint:
+	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s v1.21.0

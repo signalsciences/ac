@@ -13,6 +13,8 @@ import (
 	"container/list"
 )
 
+const maxchar = 256
+
 // A node in the trie structure used to implement Aho-Corasick
 type node struct {
 	root bool // true if this is the root
@@ -30,13 +32,13 @@ type node struct {
 	// The use of fixed size arrays is space-inefficient but fast for
 	// lookups.
 
-	child [256]*node // A non-nil entry in this array means that the
+	child [maxchar]*node // A non-nil entry in this array means that the
 	// index represents a byte value which can be
 	// appended to the current node. Blices in the
 	// trie are built up byte by byte through these
 	// child node pointers.
 
-	fails [256]*node // Where to fail to (by following the fail
+	fails [maxchar]*node // Where to fail to (by following the fail
 	// pointers) for each possible byte
 
 	suffix *node // Pointer to the longest possible strict suffix of
@@ -144,7 +146,7 @@ func (m *Matcher) buildTrie(dictionary [][]byte) {
 	for l.Len() > 0 {
 		n := l.Remove(l.Front()).(*node)
 
-		for i := 0; i < 256; i++ {
+		for i := 0; i < maxchar; i++ {
 			c := n.child[i]
 			if c != nil {
 				l.PushBack(c)
@@ -172,7 +174,7 @@ func (m *Matcher) buildTrie(dictionary [][]byte) {
 	}
 
 	for i := 0; i < m.extent; i++ {
-		for c := 0; c < 256; c++ {
+		for c := 0; c < maxchar; c++ {
 			n := &m.trie[i]
 			for n.child[c] == nil && !n.root {
 				n = n.fail
@@ -244,7 +246,7 @@ func (m *Matcher) buildTrieString(dictionary []string) {
 	for l.Len() > 0 {
 		n := l.Remove(l.Front()).(*node)
 
-		for i := 0; i < 256; i++ {
+		for i := 0; i < maxchar; i++ {
 			c := n.child[i]
 			if c != nil {
 				l.PushBack(c)
@@ -272,7 +274,7 @@ func (m *Matcher) buildTrieString(dictionary []string) {
 	}
 
 	for i := 0; i < m.extent; i++ {
-		for c := 0; c < 256; c++ {
+		for c := 0; c < maxchar; c++ {
 			n := &m.trie[i]
 			for n.child[c] == nil && !n.root {
 				n = n.fail

@@ -136,6 +136,12 @@ var cases = []struct {
 		"The Man Of Steel: Superman",
 		[]string{"per"},
 	},
+	{
+		"NotAsciiInput",
+		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage", "Gecko"},
+		"Mazilla/5.0 \u0000 (Moc; Intel Computer OS X 10_7_5) AppleWebKit/537.36 \uFFFF (KHTML, like Gecko) Chrome/30.0.1599.101 Sofari/537.36",
+		[]string{"Gecko"},
+	},
 }
 
 func TestAC(t *testing.T) {

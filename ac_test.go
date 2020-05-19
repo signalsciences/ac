@@ -204,6 +204,14 @@ func TestACBlices(t *testing.T) {
 	}
 }
 
+func TestNonASCIIDictionary(t *testing.T) {
+	dict := []string{"hello world", "こんにちは世界"}
+	_, err := CompileString(dict)
+	if err != nil {
+		t.Errorf("error compiling matcher: %s", err)
+	}
+}
+
 var (
 	source1  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36"
 	source1b = []byte(source1)

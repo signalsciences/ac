@@ -1,6 +1,6 @@
 # ac
 
-[![GoDoc](https://godoc.org/github.com/signalsciences/ac?status.svg)](https://godoc.org/github.com/signalsciences/ac) [![Build Status](https://travis-ci.org/signalsciences/ac.svg?branch=master)](https://travis-ci.org/signalsciences/ac)
+[![GoDoc](https://godoc.org/github.com/signalsciences/ac?status.svg)](https://godoc.org/github.com/signalsciences/ac) [![Build Status](https://travis-ci.org/signalsciences/ac.svg?branch=main)](https://travis-ci.org/signalsciences/ac)
 
 Golang implementation of Aho-Corasick for rapid substring matching on either byte
 strings or ASCII strings.

@@ -117,7 +117,7 @@ func (m *Matcher) buildTrie(dictionary [][]byte) error {
 		for i, b := range blice {
 			idx := int(b)
 			if idx >= maxchar {
-				return ErrNotASCII 
+				return ErrNotASCII
 			}
 			c := n.child[idx]
 
@@ -324,7 +324,7 @@ func CompileString(dictionary []string) (*Matcher, error) {
 	m := new(Matcher)
 	if err := m.buildTrieString(dictionary); err != nil {
 		return nil, err
-	}	
+	}
 	return m, nil
 }
 
@@ -430,8 +430,8 @@ func (m *Matcher) Match(in []byte) bool {
 	n := m.root
 	for _, b := range in {
 		c := int(b)
-		if c > maxchar {
-		   c = 0	
+		if c >= maxchar {
+			c = 0
 		}
 		if !n.root && n.child[c] == nil {
 			n = n.fails[c]
@@ -459,7 +459,7 @@ func (m *Matcher) MatchString(in string) bool {
 	for idx := 0; idx < slen; idx++ {
 		c := int(in[idx])
 		if c >= maxchar {
-			c = 0	
+			c = 0
 		}
 		if !n.root && n.child[c] == nil {
 			n = n.fails[c]

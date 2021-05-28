@@ -1,6 +1,6 @@
 # ac
 
-[![GoDoc](https://godoc.org/github.com/signalsciences/ac?status.svg)](https://godoc.org/github.com/signalsciences/ac) [![Build Status](https://travis-ci.org/signalsciences/ac.svg?branch=main)](https://travis-ci.org/signalsciences/ac)
+[![GoDoc](https://godoc.org/github.com/signalsciences/ac?status.svg)](https://godoc.org/github.com/signalsciences/ac) [![Actions Status](https://github.com/signalsciences/ac/workflows/lint/badge.svg)](https://github.com/signalsciences/ac/actions)
 
 Golang implementation of Aho-Corasick for rapid substring matching on either byte
 strings or ASCII strings.
@@ -11,15 +11,6 @@ License).  The fork/changes were needed for a specific application usages
 that are incomptabile with the original library.  Some other minor optimizations 
 around memory and setup were also done.
 
-## :rotating_light: NOTICE :rotating_light:
-
-Effective **May 17th 2021** the default branch will change from `master` to `main`. Run the following commands to update a local clone:
-```
-git branch -m master main
-git fetch origin
-git branch -u origin/main main
-git remote set-head origin -a
-```
 
 ## Examples
 

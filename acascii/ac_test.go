@@ -234,7 +234,14 @@ func BenchmarkAC1(b *testing.B) {
 
 func ExampleMatcher_FindAllString() {
 	m := MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
-	matches := m.FindAllString("The Man Of Steel: Superman")
+	matches := m.FindAllString("Superman")
+	fmt.Println(matches)
+	// Output: [Superman uperman perman erman]
+}
+
+func ExampleMatcher_FindAllStringCaseInsensitive() {
+	m := MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
+	matches := m.FindAllStringCaseInsensitive("SUPERMAN")
 	fmt.Println(matches)
 	// Output: [Superman uperman perman erman]
 }

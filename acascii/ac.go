@@ -12,6 +12,7 @@ package acascii
 import (
 	"container/list"
 	"errors"
+	"unicode/utf8"
 )
 
 const maxchar = 128
@@ -117,7 +118,7 @@ func (m *Matcher) buildTrie(dictionary [][]byte) error {
 		for i, b := range blice {
 			idx := int(b)
 			if idx >= maxchar {
-				return ErrNotASCII 
+				return ErrNotASCII
 			}
 			c := n.child[idx]
 
@@ -324,7 +325,7 @@ func CompileString(dictionary []string) (*Matcher, error) {
 	m := new(Matcher)
 	if err := m.buildTrieString(dictionary); err != nil {
 		return nil, err
-	}	
+	}
 	return m, nil
 }
 
@@ -425,13 +426,59 @@ func (m *Matcher) FindAllString(in string) []string {
 	return hits
 }
 
+// FindAllStringCaseInsensitive searches in for blices and returns all the blices (as strings) found as
+// in the original dictionary with Case-Insensitive
+func (m *Matcher) FindAllStringCaseInsensitive(in string) []string {
+	m.counter++
+	var hits []string
+
+	n := m.root
+	slen := len(in)
+	for idx := 0; idx < slen; idx++ {
+		c := int(in[idx])
+		if c >= maxchar {
+			c = 0
+		}
+		if n.child[c] == nil {
+			c = changeCase(c)
+		}
+		if !n.root && n.child[c] == nil {
+			n = n.fails[c]
+		}
+		if n.child[c] != nil {
+			f := n.child[c]
+			n = f
+
+			if f.output && f.counter != m.counter {
+				hits = append(hits, f.b)
+				f.counter = m.counter
+			}
+
+			for !f.suffix.root {
+				f = f.suffix
+				if f.counter != m.counter {
+					hits = append(hits, f.b)
+					f.counter = m.counter
+				} else {
+					// There's no point working our way up the
+					// suffixes if it's been done before for this call
+					// to Match. The matches are already in hits.
+					break
+				}
+			}
+		}
+	}
+
+	return hits
+}
+
 // Match returns true if the input slice contains any subslices
 func (m *Matcher) Match(in []byte) bool {
 	n := m.root
 	for _, b := range in {
 		c := int(b)
 		if c > maxchar {
-		   c = 0	
+			c = 0
 		}
 		if !n.root && n.child[c] == nil {
 			n = n.fails[c]
@@ -459,7 +506,7 @@ func (m *Matcher) MatchString(in string) bool {
 	for idx := 0; idx < slen; idx++ {
 		c := int(in[idx])
 		if c >= maxchar {
-			c = 0	
+			c = 0
 		}
 		if !n.root && n.child[c] == nil {
 			n = n.fails[c]
@@ -477,4 +524,19 @@ func (m *Matcher) MatchString(in string) bool {
 		}
 	}
 	return false
+}
+
+func changeCase(c int) int {
+	if c >= utf8.RuneSelf {
+		return c
+	}
+	if 'a' <= c && c <= 'z' {
+		c -= 'a' - 'A'
+		return c
+	}
+	if 'A' <= c && c <= 'Z' {
+		c += 'a' - 'A'
+		return c
+	}
+	return c
 }

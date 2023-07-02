@@ -28,6 +28,20 @@ Output:
 [Superman uperman perman erman]
 ```
 
+* FindAllStringCaseInsensitive
+
+```
+m := MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
+matches := m.FindAllStringCaseInsensitive("SUPERMAN")
+fmt.Println(matches)
+```
+
+Output:
+
+```
+[Superman uperman perman erman]
+```
+
 * MatchString
 
 ```
@@ -51,8 +65,3 @@ The `ac/acascii` package assumes the dictionary is all ASCII characters (1-127) 
 * 50% less CPU time
 
 as compared to the plain `ac` package.
-
-
-## IN PROGRESS
-
-* Support for ASCII case-insensitive matching.

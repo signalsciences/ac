@@ -246,6 +246,16 @@ func ExampleMatcher_FindAllStringCaseInsensitive() {
 	// Output: [Superman uperman perman erman]
 }
 
+func ExampleMatcher_FindAllCaseInsensitive() {
+	m := MustCompile([][]byte{[]byte("Superman"), []byte("uperman"), []byte("perman"), []byte("erman")})
+	matches := m.FindAllCaseInsensitive([]byte("SUPERMAN"))
+	str := []string{}
+	for _, v := range matches {
+		str = append(str, string(v))
+	}
+	fmt.Println(str)
+	// Output: [Superman uperman perman erman]
+}
 func ExampleMatcher_MatchString() {
 	m := MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
 	contains := m.MatchString("The Man Of Steel: Superman")

@@ -382,6 +382,53 @@ func (m *Matcher) FindAll(in []byte) [][]byte {
 	return hits
 }
 
+// FindAll searches in for blices and returns all the blices found
+// in the original dictionary
+func (m *Matcher) FindAllCaseInsensitive(in []byte) [][]byte {
+	m.counter++
+	var hits [][]byte
+
+	n := m.root
+
+	for _, b := range in {
+		c := int(b)
+		if c >= maxchar {
+			c = 0
+		}
+		if !n.root && n.child[c] == nil {
+			c = changeCase(c)
+		}
+		if !n.root && n.child[c] == nil {
+			n = n.fails[c]
+		}
+
+		if n.child[c] != nil {
+			f := n.child[c]
+			n = f
+
+			if f.output && f.counter != m.counter {
+				hits = append(hits, []byte(f.b))
+				f.counter = m.counter
+			}
+
+			for !f.suffix.root {
+				f = f.suffix
+				if f.counter != m.counter {
+					hits = append(hits, []byte(f.b))
+					f.counter = m.counter
+				} else {
+					// There's no point working our way up the
+					// suffixes if it's been done before for this call
+					// to Match. The matches are already in hits.
+					break
+				}
+			}
+		}
+	}
+
+	return hits
+}
+
 // FindAllString searches in for blices and returns all the blices (as strings) found as
 // in the original dictionary
 func (m *Matcher) FindAllString(in string) []string {
@@ -439,7 +486,7 @@ func (m *Matcher) FindAllStringCaseInsensitive(in string) []string {
 		if c >= maxchar {
 			c = 0
 		}
-		if n.child[c] == nil {
+		if !n.root && n.child[c] == nil {
 			c = changeCase(c)
 		}
 		if !n.root && n.child[c] == nil {

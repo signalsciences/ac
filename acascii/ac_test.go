@@ -241,7 +241,7 @@ func ExampleMatcher_FindAllString() {
 
 func ExampleMatcher_FindAllStringCaseInsensitive() {
 	m := MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
-	matches := m.FindAllStringCaseInsensitive("SUPERMAN")
+	matches := m.FindAllStringCaseInsensitive("sUPERMAN")
 	fmt.Println(matches)
 	// Output: [Superman uperman perman erman]
 }

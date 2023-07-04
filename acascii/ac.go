@@ -395,7 +395,7 @@ func (m *Matcher) FindAllCaseInsensitive(in []byte) [][]byte {
 		if c >= maxchar {
 			c = 0
 		}
-		if !n.root && n.child[c] == nil {
+		if n.child[c] == nil {
 			c = changeCase(c)
 		}
 		if !n.root && n.child[c] == nil {
@@ -486,7 +486,7 @@ func (m *Matcher) FindAllStringCaseInsensitive(in string) []string {
 		if c >= maxchar {
 			c = 0
 		}
-		if !n.root && n.child[c] == nil {
+		if n.child[c] == nil {
 			c = changeCase(c)
 		}
 		if !n.root && n.child[c] == nil {

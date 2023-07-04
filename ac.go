@@ -11,6 +11,7 @@ package ac
 
 import (
 	"container/list"
+	"unicode/utf8"
 )
 
 const maxchar = 256
@@ -363,6 +364,53 @@ func (m *Matcher) FindAll(in []byte) [][]byte {
 	return hits
 }
 
+// FindAll searches in for blices and returns all the blices found
+// in the original dictionary
+func (m *Matcher) FindAllCaseInsensitive(in []byte) [][]byte {
+	m.counter++
+	var hits [][]byte
+
+	n := m.root
+
+	for _, b := range in {
+		c := int(b)
+		if c >= maxchar {
+			c = 0
+		}
+		if !n.root && n.child[c] == nil {
+			c = changeCase(c)
+		}
+		if !n.root && n.child[c] == nil {
+			n = n.fails[c]
+		}
+
+		if n.child[c] != nil {
+			f := n.child[c]
+			n = f
+
+			if f.output && f.counter != m.counter {
+				hits = append(hits, []byte(f.b))
+				f.counter = m.counter
+			}
+
+			for !f.suffix.root {
+				f = f.suffix
+				if f.counter != m.counter {
+					hits = append(hits, []byte(f.b))
+					f.counter = m.counter
+				} else {
+					// There's no point working our way up the
+					// suffixes if it's been done before for this call
+					// to Match. The matches are already in hits.
+					break
+				}
+			}
+		}
+	}
+
+	return hits
+}
+
 // FindAllString searches in for blices and returns all the blices (as strings) found as
 // in the original dictionary
 func (m *Matcher) FindAllString(in string) []string {
@@ -391,6 +439,52 @@ func (m *Matcher) FindAllString(in string) []string {
 				f = f.suffix
 				if f.counter != m.counter {
 					hits = append(hits, in[idx-f.index+1:idx+1])
+					f.counter = m.counter
+				} else {
+					// There's no point working our way up the
+					// suffixes if it's been done before for this call
+					// to Match. The matches are already in hits.
+					break
+				}
+			}
+		}
+	}
+
+	return hits
+}
+
+// FindAllStringCaseInsensitive searches in for blices and returns all the blices (as strings) found as
+// in the original dictionary with Case-Insensitive
+func (m *Matcher) FindAllStringCaseInsensitive(in string) []string {
+	m.counter++
+	var hits []string
+
+	n := m.root
+	slen := len(in)
+	for idx := 0; idx < slen; idx++ {
+		c := int(in[idx])
+		if c >= maxchar {
+			c = 0
+		}
+		if !n.root && n.child[c] == nil {
+			c = changeCase(c)
+		}
+		if !n.root && n.child[c] == nil {
+			n = n.fails[c]
+		}
+		if n.child[c] != nil {
+			f := n.child[c]
+			n = f
+
+			if f.output && f.counter != m.counter {
+				hits = append(hits, f.b)
+				f.counter = m.counter
+			}
+
+			for !f.suffix.root {
+				f = f.suffix
+				if f.counter != m.counter {
+					hits = append(hits, f.b)
 					f.counter = m.counter
 				} else {
 					// There's no point working our way up the
@@ -451,4 +545,19 @@ func (m *Matcher) MatchString(in string) bool {
 		}
 	}
 	return false
+}
+
+func changeCase(c int) int {
+	if c >= utf8.RuneSelf {
+		return c
+	}
+	if 'a' <= c && c <= 'z' {
+		c -= 'a' - 'A'
+		return c
+	}
+	if 'A' <= c && c <= 'Z' {
+		c += 'a' - 'A'
+		return c
+	}
+	return c
 }

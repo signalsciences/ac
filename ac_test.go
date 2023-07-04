@@ -260,3 +260,21 @@ func BenchmarkAC2Byte(b *testing.B) {
 	}
 	result1 = result
 }
+
+func ExampleMatcher_FindAllStringCaseInsensitive() {
+	m := MustCompileString([]string{"Superman", "uperman", "perman", "erman"})
+	matches := m.FindAllStringCaseInsensitive("SUPERMAN")
+	fmt.Println(matches)
+	// Output: [Superman uperman perman erman]
+}
+
+func ExampleMatcher_FindAllCaseInsensitive() {
+	m := MustCompile([][]byte{{0xff, 0x7f}, []byte("uperman"), []byte("perman"), []byte("erman")})
+	matches := m.FindAllCaseInsensitive([]byte{0xff, 0x7f})
+	str := []string{}
+	for _, v := range matches {
+		str = append(str, string(v))
+	}
+	fmt.Println(str)
+	// Output: [Superman uperman perman erman]
+}

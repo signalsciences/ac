@@ -384,13 +384,13 @@ func (m *Matcher) FindAll(in []byte) [][]byte {
 
 // FindAll searches in for blices and returns all the blices found
 // in the original dictionary
-func (m *Matcher) FindAllCaseInsensitive(in []byte) [][]byte {
+func (m *Matcher) FindAllCaseInsensitive(in []byte, original bool) [][]byte {
 	m.counter++
 	var hits [][]byte
 
 	n := m.root
 
-	for _, b := range in {
+	for idx, b := range in {
 		c := int(b)
 		if c >= maxchar {
 			c = 0
@@ -407,14 +407,23 @@ func (m *Matcher) FindAllCaseInsensitive(in []byte) [][]byte {
 			n = f
 
 			if f.output && f.counter != m.counter {
-				hits = append(hits, []byte(f.b))
+				if original {
+					hits = append(hits, []byte(f.b))
+				} else {
+					hits = append(hits, in[idx-f.index+1:idx+1])
+				}
 				f.counter = m.counter
 			}
 
 			for !f.suffix.root {
 				f = f.suffix
 				if f.counter != m.counter {
-					hits = append(hits, []byte(f.b))
+					if original {
+						hits = append(hits, []byte(f.b))
+
+					} else {
+						hits = append(hits, in[idx-f.index+1:idx+1])
+					}
 					f.counter = m.counter
 				} else {
 					// There's no point working our way up the
@@ -475,7 +484,7 @@ func (m *Matcher) FindAllString(in string) []string {
 
 // FindAllStringCaseInsensitive searches in for blices and returns all the blices (as strings) found as
 // in the original dictionary with Case-Insensitive
-func (m *Matcher) FindAllStringCaseInsensitive(in string) []string {
+func (m *Matcher) FindAllStringCaseInsensitive(in string, original bool) []string {
 	m.counter++
 	var hits []string
 
@@ -497,14 +506,24 @@ func (m *Matcher) FindAllStringCaseInsensitive(in string) []string {
 			n = f
 
 			if f.output && f.counter != m.counter {
-				hits = append(hits, f.b)
+
+				if original {
+					hits = append(hits, f.b)
+				} else {
+					hits = append(hits, in[idx-f.index+1:idx+1])
+				}
+
 				f.counter = m.counter
 			}
 
 			for !f.suffix.root {
 				f = f.suffix
 				if f.counter != m.counter {
-					hits = append(hits, f.b)
+					if original {
+						hits = append(hits, f.b)
+					} else {
+						hits = append(hits, in[idx-f.index+1:idx+1])
+					}
 					f.counter = m.counter
 				} else {
 					// There's no point working our way up the

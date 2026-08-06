@@ -74,3 +74,11 @@ func ExampleMatcher_MatchString() {
 	fmt.Println(contains)
 	// Output: true
 }
+
+// FuzzMatcher checks the matcher against the brute-force oracle. This package
+// indexes every byte, so nothing needs adjusting.
+func FuzzMatcher(f *testing.F) {
+	actest.Fuzz(f, impl, func(dict []string, input string) ([]string, string) {
+		return dict, input
+	})
+}

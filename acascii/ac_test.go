@@ -69,6 +69,22 @@ func TestNonASCIIInput(t *testing.T) {
 			t.Errorf("FindAllString(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
+
+	// Every byte above ASCII must fold identically, including 0x80, which an
+	// earlier off-by-one in Match let through unclamped.
+	base := MustCompileString([]string{"a\x00c"})
+	for b := 0x80; b < 0x100; b++ {
+		in := []byte{'a', byte(b), 'c'}
+		if !base.Match(in) {
+			t.Errorf("byte %#02x: Match = false, want true", b)
+		}
+		if !base.MatchString(string(in)) {
+			t.Errorf("byte %#02x: MatchString = false, want true", b)
+		}
+		if got := base.FindAll(in); len(got) != 1 || !reflect.DeepEqual(got[0], in) {
+			t.Errorf("byte %#02x: FindAll = %q, want [%q]", b, got, in)
+		}
+	}
 }
 
 func ExampleMatcher_FindAllString() {
@@ -105,4 +121,28 @@ func TestMustCompilePanics(t *testing.T) {
 			t.Error("did not panic")
 		})
 	}
+}
+
+// FuzzMatcher checks the matcher against the brute-force oracle. Dictionary
+// bytes are brought into range so they compile, and high input bytes are
+// folded up front the way the matcher folds them internally, so the oracle
+// and the matcher are asked the same question.
+func FuzzMatcher(f *testing.F) {
+	actest.Fuzz(f, impl, func(dict []string, input string) ([]string, string) {
+		out := make([]string, len(dict))
+		for i, e := range dict {
+			b := []byte(e)
+			for j := range b {
+				b[j] &= 0x7f
+			}
+			out[i] = string(b)
+		}
+		in := []byte(input)
+		for j := range in {
+			if in[j] >= 0x80 {
+				in[j] = 0
+			}
+		}
+		return out, string(in)
+	})
 }

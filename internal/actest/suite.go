@@ -190,6 +190,41 @@ func Run(t *testing.T, impl Impl) {
 	t.Run("Must", func(t *testing.T) { runMust(t, impl) })
 	t.Run("ExactSizing", func(t *testing.T) { runExactSizing(t, impl) })
 	t.Run("CounterWrap", func(t *testing.T) { runCounterWrap(t, impl) })
+	t.Run("ByteSweep", func(t *testing.T) { runByteSweep(t, impl) })
+}
+
+// runByteSweep pushes every possible byte value through all four entry
+// points. None may panic, and the string and []byte forms must agree.
+//
+// This is here because the pre-rewrite ASCII matcher clamped the input byte
+// with > rather than >= in one of its four entry points, so the single byte
+// 0x80 indexed one past the end of a 128-entry array. Three of the four
+// entry points were correct, and the fixed test inputs happened to use other
+// high bytes, so nothing caught it.
+func runByteSweep(t *testing.T, impl Impl) {
+	m := impl.MustCompileString([]string{"abc", "a", "\x00z"})
+	mb := impl.MustCompile(ToBytes([]string{"abc", "a", "\x00z"}))
+
+	for b := 0; b < 256; b++ {
+		in := []byte{'a', byte(b), 'c', byte(b)}
+		s := string(in)
+
+		if got, want := m.MatchString(s), mb.Match(in); got != want {
+			t.Errorf("byte %#02x: MatchString = %v, Match = %v", b, got, want)
+		}
+
+		hs := m.FindAllString(s)
+		hb := mb.FindAll(in)
+		if len(hs) != len(hb) {
+			t.Errorf("byte %#02x: FindAllString = %q, FindAll = %q", b, hs, hb)
+			continue
+		}
+		for i := range hs {
+			if hs[i] != string(hb[i]) {
+				t.Errorf("byte %#02x: hit %d, FindAllString = %q, FindAll = %q", b, i, hs[i], hb[i])
+			}
+		}
+	}
 }
 
 // runExactSizing checks the transition table is sized to the states the
@@ -394,4 +429,103 @@ func NaiveFindAllString(dict []string, in string) []string {
 		}
 	}
 	return hits
+}
+
+// Normalize adjusts a fuzzer-generated dictionary and input into a form the
+// package accepts and the oracle can predict. The full byte package needs no
+// adjustment; the ASCII-only one clears the high bit of dictionary bytes so
+// they compile, and folds high input bytes the way the matcher itself does,
+// so that the oracle and the matcher are asked the same question.
+type Normalize func(dict []string, input string) ([]string, string)
+
+// decodeDict turns fuzzer bytes into a dictionary. Entries are length
+// prefixed so that any byte, including NUL, can appear inside one.
+func decodeDict(b []byte) []string {
+	var out []string
+	for len(b) > 0 && len(out) < 32 {
+		n := int(b[0])
+		b = b[1:]
+		if n > len(b) {
+			n = len(b)
+		}
+		out = append(out, string(b[:n]))
+		b = b[n:]
+	}
+	return out
+}
+
+// Fuzz checks the matcher against the oracle on arbitrary dictionaries. The
+// seeds cover the structures that are easy to get wrong -- shared prefixes,
+// nested suffixes, repeats, entries that are suffixes of other entries --
+// rather than any particular real dictionary.
+func Fuzz(f *testing.F, impl Impl, norm Normalize) {
+	seeds := [][]string{
+		{"a"},
+		{"a", "ab", "abc"},         // nested prefixes
+		{"abc", "bc", "c"},         // nested suffixes
+		{"ab", "ba"},               // overlapping
+		{"aa"},                     // self overlapping
+		{"a", ""},                  // empty entry
+		{"a", "a"},                 // duplicate
+		{"Superwoman", "per"},      // needs backtracking
+		{"\x00", "\x00\x00"},       // NUL
+		{"\xff\xfe", "\xfe"},       // high bytes
+		{strings.Repeat("ab", 40)}, // long entry
+	}
+	inputs := []string{"", "a", "aa", "abcabc", "xabax", "\x00\x00", "\xff\xfe\xff", strings.Repeat("ab", 50)}
+
+	for _, dict := range seeds {
+		var enc []byte
+		for _, e := range dict {
+			enc = append(enc, byte(len(e)))
+			enc = append(enc, e...)
+		}
+		for _, in := range inputs {
+			f.Add(enc, in)
+		}
+	}
+
+	f.Fuzz(func(t *testing.T, data []byte, input string) {
+		dict := decodeDict(data)
+		if len(dict) == 0 {
+			return
+		}
+		dict, input = norm(dict, input)
+
+		m, err := impl.CompileString(dict)
+		if err != nil {
+			t.Fatalf("CompileString(%q): %s", dict, err)
+		}
+		mb, err := impl.Compile(ToBytes(dict))
+		if err != nil {
+			t.Fatalf("Compile(%q): %s", dict, err)
+		}
+
+		want := NaiveFindAllString(dict, input)
+		wantMatch := len(want) != 0
+
+		if got := m.FindAllString(input); !reflect.DeepEqual(got, want) {
+			t.Fatalf("dict %q input %q: FindAllString = %q, want %q", dict, input, got, want)
+		}
+		if got := m.MatchString(input); got != wantMatch {
+			t.Fatalf("dict %q input %q: MatchString = %v, want %v", dict, input, got, wantMatch)
+		}
+
+		var wantB [][]byte
+		for _, s := range want {
+			wantB = append(wantB, []byte(s))
+		}
+		if got := mb.FindAll([]byte(input)); !reflect.DeepEqual(got, wantB) {
+			t.Fatalf("dict %q input %q: FindAll = %q, want %q", dict, input, got, wantB)
+		}
+		if got := mb.Match([]byte(input)); got != wantMatch {
+			t.Fatalf("dict %q input %q: Match = %v, want %v", dict, input, got, wantMatch)
+		}
+
+		// running twice must give the same answer: the duplicate-suppression
+		// counters are matcher state that persists across calls
+		if got := m.FindAllString(input); !reflect.DeepEqual(got, want) {
+			t.Fatalf("dict %q input %q: second FindAllString = %q, want %q", dict, input, got, want)
+		}
+	})
 }

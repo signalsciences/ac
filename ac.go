@@ -10,288 +10,280 @@
 package ac
 
 import (
-	"container/list"
+	"bytes"
+	"errors"
+	"math"
+	"sort"
 )
 
 const maxchar = 256
 
-// A node in the trie structure used to implement Aho-Corasick
-type node struct {
-	root bool // true if this is the root
+// ErrTooLarge is returned when a dictionary needs an automaton whose row
+// offsets would not fit in the int32 the transition table stores.
+var ErrTooLarge = errors.New("dictionary too large")
 
-	output bool // True means this node represents a blice that should
-	// be output when matching
-
-	b string // The path at this node
-
-	index int // index into original dictionary if output is true
-
-	counter int // Set to the value of the Matcher.counter when a
-	// match is output to prevent duplicate output
-
-	// The use of fixed size arrays is space-inefficient but fast for
-	// lookups.
-
-	child [maxchar]*node // A non-nil entry in this array means that the
-	// index represents a byte value which can be
-	// appended to the current node. Blices in the
-	// trie are built up byte by byte through these
-	// child node pointers.
-
-	fails [maxchar]*node // Where to fail to (by following the fail
-	// pointers) for each possible byte
-
-	suffix *node // Pointer to the longest possible strict suffix of
-	// this node
-
-	fail *node // Pointer to the next node which is in the dictionary
-	// which can be reached from here following suffixes. Called fail
-	// because it is used to fallback in the trie when a match fails.
-}
+// metaRow is the number of int32 slots each row carries after its transition
+// columns: the dictionary-suffix link, the length of the entry ending at the
+// state, and the duplicate-suppression counter.
+const metaRow = 3
 
 // Matcher contains a list of blices to match against
 type Matcher struct {
-	counter int // Counts the number of matches done, and is used to
-	// prevent output of multiple matches of the same string
-	trie []node // preallocated block of memory containing all the
-	// nodes
-	extent int   // offset into trie that is currently free
-	root   *node // Points to trie[0]
+	// table holds the entire automaton. Every state owns one row of
+	// width+metaRow int32s, laid out as
+	//
+	//	[ transition columns ... | suffix | outLen | counter ]
+	//
+	// A state is identified by the offset of its row rather than by an index,
+	// so a transition is table[s+column]: one add and one load, with no
+	// multiply on the dependency chain that the scan loops are bound by.
+	//
+	// Folding the child pointers and the fail transitions into a single dense
+	// goto table, and folding the per-state data into the same slice, is what
+	// keeps the whole automaton down to one allocation.
+	table []int32
+
+	// width is the number of transition columns in a row.
+	width int
+
+	// alphabet maps an input byte to its transition column. Bytes occurring
+	// in no dictionary entry share column 0, whose transition is always back
+	// to the root, so the table only pays for the bytes actually used.
+	alphabet [maxchar]uint16
+
+	// starts reports whether a byte can begin a dictionary entry. While no
+	// match is in progress the scanners use it to skip input without walking
+	// the state machine.
+	starts [maxchar]bool
+
+	// counter counts the number of matches done, and is used to prevent
+	// output of multiple matches of the same string
+	counter int32
 }
 
-// findBlice looks for a blice in the trie starting from the root and
-// returns a pointer to the node representing the end of the blice. If
-// the blice is not found it returns nil.
-func (m *Matcher) findBlice(b string) *node {
-	n := &m.trie[0]
-
-	for n != nil && len(b) > 0 {
-		n = n.child[int(b[0])]
-		b = b[1:]
+// setAlphabet gives every byte the dictionary uses its own transition column.
+// Unused bytes keep column 0.
+func (m *Matcher) setAlphabet(present *[maxchar]bool) {
+	width := 1
+	for b := 0; b < maxchar; b++ {
+		if present[b] {
+			m.alphabet[b] = uint16(width)
+			width++
+		}
 	}
-
-	return n
+	m.width = width
 }
 
-// getFreeNode: gets a free node structure from the Matcher's trie
-// pool and updates the extent to point to the next free node.
-func (m *Matcher) getFreeNode() *node {
-	m.extent++
-
-	if m.extent == 1 {
-		m.root = &m.trie[0]
-		m.root.root = true
+// countNodesString returns the exact number of states a sorted dictionary
+// needs: its number of distinct prefixes, plus the root. Sorting is what
+// makes the count exact -- in lexicographic order an entry's longest common
+// prefix with all earlier entries is its longest common prefix with its
+// immediate predecessor.
+func countNodesString(sorted []string) int {
+	count := 1
+	for i, s := range sorted {
+		p := 0
+		if i > 0 {
+			prev := sorted[i-1]
+			for p < len(s) && p < len(prev) && s[p] == prev[p] {
+				p++
+			}
+		}
+		count += len(s) - p
 	}
-
-	return &m.trie[m.extent-1]
+	return count
 }
 
-// buildTrie builds the fundamental trie structure from a set of
-// blices.
-func (m *Matcher) buildTrie(dictionary [][]byte) {
+// countNodesBytes is countNodesString for a sorted [][]byte dictionary.
+func countNodesBytes(sorted [][]byte) int {
+	count := 1
+	for i, s := range sorted {
+		p := 0
+		if i > 0 {
+			prev := sorted[i-1]
+			for p < len(s) && p < len(prev) && s[p] == prev[p] {
+				p++
+			}
+		}
+		count += len(s) - p
+	}
+	return count
+}
 
-	// Work out the maximum size for the trie (all dictionary entries
-	// are distinct plus the root). This is used to preallocate memory
-	// for it.
+// blices orders a [][]byte dictionary lexicographically.
+type blices [][]byte
 
-	max := 1
+func (b blices) Len() int           { return len(b) }
+func (b blices) Less(i, j int) bool { return bytes.Compare(b[i], b[j]) < 0 }
+func (b blices) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+
+// buildTrie builds the fundamental trie structure from a set of blices.
+//
+// While the trie is being built the transition columns hold plain child
+// links, where 0 means "no child" -- unambiguous, because the root's row sits
+// at offset 0 and the root can never be a child. link then rewrites them into
+// a complete goto table.
+func (m *Matcher) buildTrie(dictionary [][]byte) error {
+	var present [maxchar]bool
 	for _, blice := range dictionary {
-		max += len(blice)
+		for _, b := range blice {
+			present[b] = true
+		}
 	}
-	m.trie = make([]node, max)
+	m.setAlphabet(&present)
 
-	// Calling this an ignoring its argument simply allocated
-	// m.trie[0] which will be the root element
+	sorted := append(make(blices, 0, len(dictionary)), dictionary...)
+	sort.Sort(sorted)
 
-	m.getFreeNode()
+	stride := m.width + metaRow
+	size := countNodesBytes(sorted) * stride
+	if size > math.MaxInt32 {
+		return ErrTooLarge
+	}
+	m.table = make([]int32, size)
 
-	// This loop builds the nodes in the trie by following through
-	// each dictionary entry building the children pointers.
-
-	for _, blice := range dictionary {
-		n := m.root
-		for i, b := range blice {
-
-			c := n.child[int(b)]
-
-			if c == nil {
-				c = m.getFreeNode()
-				n.child[int(b)] = c
-				c.b = string(blice[0 : i+1])
-
-				// Nodes directly under the root node will have the
-				// root as their fail point as there are no suffixes
-				// possible.
-
-				if i == 0 {
-					c.fail = m.root
-				}
-
-				c.suffix = m.root
+	free := int32(stride)
+	for _, blice := range sorted {
+		cur := 0
+		for _, b := range blice {
+			i := cur + int(m.alphabet[b])
+			t := m.table[i]
+			if t == 0 {
+				t = free
+				free += int32(stride)
+				m.table[i] = t
 			}
-
-			n = c
+			cur = int(t)
 		}
 
-		// The last value of n points to the node representing a
-		// dictionary entry
-
-		n.output = true
-		n.index = len(blice)
-	}
-
-	l := new(list.List)
-	l.PushBack(m.root)
-
-	for l.Len() > 0 {
-		n := l.Remove(l.Front()).(*node)
-
-		for i := 0; i < maxchar; i++ {
-			c := n.child[i]
-			if c != nil {
-				l.PushBack(c)
-
-				for j := 1; j < len(c.b); j++ {
-					c.fail = m.findBlice(c.b[j:])
-					if c.fail != nil {
-						break
-					}
-				}
-
-				if c.fail == nil {
-					c.fail = m.root
-				}
-
-				for j := 1; j < len(c.b); j++ {
-					s := m.findBlice(c.b[j:])
-					if s != nil && s.output {
-						c.suffix = s
-						break
-					}
-				}
-			}
+		// cur now points at the state representing a dictionary entry. Empty
+		// entries land on the root, which is never reported, so they are
+		// skipped -- as they were before.
+		if len(blice) > 0 {
+			m.table[cur+m.width+1] = int32(len(blice))
 		}
 	}
 
-	for i := 0; i < m.extent; i++ {
-		for c := 0; c < maxchar; c++ {
-			n := &m.trie[i]
-			for n.child[c] == nil && !n.root {
-				n = n.fail
-			}
-
-			m.trie[i].fails[c] = n
-		}
-	}
-
-	m.trie = m.trie[:m.extent]
+	m.link()
+	return nil
 }
 
 // buildTrieString builds the fundamental trie structure from a []string
-func (m *Matcher) buildTrieString(dictionary []string) {
-
-	// Work out the maximum size for the trie (all dictionary entries
-	// are distinct plus the root). This is used to preallocate memory
-	// for it.
-
-	max := 1
-	for _, blice := range dictionary {
-		max += len(blice)
-
+func (m *Matcher) buildTrieString(dictionary []string) error {
+	var present [maxchar]bool
+	for _, s := range dictionary {
+		for i := 0; i < len(s); i++ {
+			present[s[i]] = true
+		}
 	}
-	m.trie = make([]node, max)
+	m.setAlphabet(&present)
 
-	// Calling this an ignoring its argument simply allocated
-	// m.trie[0] which will be the root element
+	sorted := append(make([]string, 0, len(dictionary)), dictionary...)
+	sort.Strings(sorted)
 
-	m.getFreeNode()
+	stride := m.width + metaRow
+	size := countNodesString(sorted) * stride
+	if size > math.MaxInt32 {
+		return ErrTooLarge
+	}
+	m.table = make([]int32, size)
 
-	// This loop builds the nodes in the trie by following through
-	// each dictionary entry building the children pointers.
-
-	for _, blice := range dictionary {
-		n := m.root
-		for i := 0; i < len(blice); i++ {
-			b := int(blice[i])
-			c := n.child[b]
-			if c == nil {
-				c = m.getFreeNode()
-				n.child[b] = c
-				c.b = blice[0 : i+1]
-
-				// Nodes directly under the root node will have the
-				// root as their fail point as there are no suffixes
-				// possible.
-
-				if i == 0 {
-					c.fail = m.root
-				}
-
-				c.suffix = m.root
+	free := int32(stride)
+	for _, s := range sorted {
+		cur := 0
+		for j := 0; j < len(s); j++ {
+			i := cur + int(m.alphabet[s[j]])
+			t := m.table[i]
+			if t == 0 {
+				t = free
+				free += int32(stride)
+				m.table[i] = t
 			}
-
-			n = c
+			cur = int(t)
 		}
 
-		// The last value of n points to the node representing a
-		// dictionary entry
-
-		n.output = true
-		n.index = len(blice)
-	}
-
-	l := new(list.List)
-	l.PushBack(m.root)
-
-	for l.Len() > 0 {
-		n := l.Remove(l.Front()).(*node)
-
-		for i := 0; i < maxchar; i++ {
-			c := n.child[i]
-			if c != nil {
-				l.PushBack(c)
-
-				for j := 1; j < len(c.b); j++ {
-					c.fail = m.findBlice(c.b[j:])
-					if c.fail != nil {
-						break
-					}
-				}
-
-				if c.fail == nil {
-					c.fail = m.root
-				}
-
-				for j := 1; j < len(c.b); j++ {
-					s := m.findBlice(c.b[j:])
-					if s != nil && s.output {
-						c.suffix = s
-						break
-					}
-				}
-			}
+		if len(s) > 0 {
+			m.table[cur+m.width+1] = int32(len(s))
 		}
 	}
 
-	for i := 0; i < m.extent; i++ {
-		for c := 0; c < maxchar; c++ {
-			n := &m.trie[i]
-			for n.child[c] == nil && !n.root {
-				n = n.fail
-			}
+	m.link()
+	return nil
+}
 
-			m.trie[i].fails[c] = n
+// link rewrites the child links left by the trie build into a complete goto
+// table and fills in the dictionary-suffix links, in one breadth-first pass.
+//
+// Because the pass visits states in order of increasing depth, the row of a
+// state's fail target is always fully converted by the time it is needed, so
+// a missing child can simply inherit the fail target's transition. That is
+// what removes the need for a separate fail table at match time.
+func (m *Matcher) link() {
+	w := m.width
+	stride := int32(w + metaRow)
+	count := len(m.table) / int(stride)
+
+	// fail maps a state index to the row offset of its fail target. The
+	// root's own row offset is 0, which is also the zero value, so states one
+	// byte deep need no initialisation.
+	fail := make([]int32, count)
+	queue := make([]int32, 0, count)
+
+	// The root's row already is a valid goto row: a missing child reads as 0,
+	// which is the root itself.
+	for c := 0; c < w; c++ {
+		if t := m.table[c]; t != 0 {
+			queue = append(queue, t/stride)
 		}
 	}
 
-	m.trie = m.trie[:m.extent]
+	for qi := 0; qi < len(queue); qi++ {
+		row := int(queue[qi] * stride)
+		frow := int(fail[queue[qi]])
+
+		if m.table[frow+w+1] != 0 {
+			// the fail target is itself a dictionary entry
+			m.table[row+w] = int32(frow)
+		} else {
+			m.table[row+w] = m.table[frow+w]
+		}
+
+		for c := 0; c < w; c++ {
+			if t := m.table[row+c]; t == 0 {
+				m.table[row+c] = m.table[frow+c]
+			} else {
+				fail[t/stride] = m.table[frow+c]
+				queue = append(queue, t/stride)
+			}
+		}
+	}
+
+	for b := 0; b < maxchar; b++ {
+		m.starts[b] = m.table[int(m.alphabet[b])] != 0
+	}
+}
+
+// nextCounter advances the duplicate-suppression counter. On the practically
+// unreachable wrap it clears the per-state markers, so that a stale marker
+// can never suppress a real match.
+func (m *Matcher) nextCounter() int32 {
+	m.counter++
+	if m.counter <= 0 {
+		stride := m.width + metaRow
+		for i := m.width + 2; i < len(m.table); i += stride {
+			m.table[i] = 0
+		}
+		m.counter = 1
+	}
+	return m.counter
 }
 
 // Compile creates a new Matcher using a list of []byte
 func Compile(dictionary [][]byte) (*Matcher, error) {
 	m := new(Matcher)
-	m.buildTrie(dictionary)
-	// no error for now
+	if err := m.buildTrie(dictionary); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -308,7 +300,9 @@ func MustCompile(dictionary [][]byte) *Matcher {
 // of strings (this is a helper to make initialization easy)
 func CompileString(dictionary []string) (*Matcher, error) {
 	m := new(Matcher)
-	m.buildTrieString(dictionary)
+	if err := m.buildTrieString(dictionary); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -322,41 +316,53 @@ func MustCompileString(dictionary []string) *Matcher {
 }
 
 // FindAll searches in for blices and returns all the blices found
-// in the original dictionary
+// in the original dictionary.
+//
+// It is not safe to call concurrently on a shared Matcher.
 func (m *Matcher) FindAll(in []byte) [][]byte {
-	m.counter++
+	counter := m.nextCounter()
 	var hits [][]byte
 
-	n := m.root
+	table, w := m.table, m.width
+	alphabet, starts := &m.alphabet, &m.starts
 
-	for idx, b := range in {
-		c := int(b)
-
-		if !n.root && n.child[c] == nil {
-			n = n.fails[c]
+	s := 0
+	for idx := 0; idx < len(in); {
+		if s == 0 {
+			// Nothing is partially matched, so any byte that cannot begin an
+			// entry can be stepped over. These loads do not depend on one
+			// another, unlike the transitions below, so this runs several
+			// times faster than driving the state machine.
+			for idx < len(in) && !starts[in[idx]] {
+				idx++
+			}
+			if idx == len(in) {
+				break
+			}
 		}
 
-		if n.child[c] != nil {
-			f := n.child[c]
-			n = f
+		s = int(table[s+int(alphabet[in[idx]])])
+		idx++
+		if s == 0 {
+			continue
+		}
 
-			if f.output && f.counter != m.counter {
-				hits = append(hits, in[idx-f.index+1:idx+1])
-				f.counter = m.counter
-			}
+		o := s + w
+		if table[o+1] != 0 && table[o+2] != counter {
+			table[o+2] = counter
+			hits = append(hits, in[idx-int(table[o+1]):idx])
+		}
 
-			for !f.suffix.root {
-				f = f.suffix
-				if f.counter != m.counter {
-					hits = append(hits, in[idx-f.index+1:idx+1])
-					f.counter = m.counter
-				} else {
-					// There's no point working our way up the
-					// suffixes if it's been done before for this call
-					// to Match. The matches are already in hits.
-					break
-				}
+		for table[o] != 0 {
+			o = int(table[o]) + w
+			if table[o+2] == counter {
+				// There's no point working our way up the suffixes if
+				// it's been done before for this call to Match. The
+				// matches are already in hits.
+				break
 			}
+			table[o+2] = counter
+			hits = append(hits, in[idx-int(table[o+1]):idx])
 		}
 	}
 
@@ -364,41 +370,46 @@ func (m *Matcher) FindAll(in []byte) [][]byte {
 }
 
 // FindAllString searches in for blices and returns all the blices (as strings) found as
-// in the original dictionary
+// in the original dictionary.
+//
+// It is not safe to call concurrently on a shared Matcher.
 func (m *Matcher) FindAllString(in string) []string {
-	m.counter++
+	counter := m.nextCounter()
 	var hits []string
 
-	n := m.root
-	slen := len(in)
-	for idx := 0; idx < slen; idx++ {
-		c := int(in[idx])
+	table, w := m.table, m.width
+	alphabet, starts := &m.alphabet, &m.starts
 
-		if !n.root && n.child[c] == nil {
-			n = n.fails[c]
+	s := 0
+	for idx := 0; idx < len(in); {
+		if s == 0 {
+			for idx < len(in) && !starts[in[idx]] {
+				idx++
+			}
+			if idx == len(in) {
+				break
+			}
 		}
 
-		if n.child[c] != nil {
-			f := n.child[c]
-			n = f
+		s = int(table[s+int(alphabet[in[idx]])])
+		idx++
+		if s == 0 {
+			continue
+		}
 
-			if f.output && f.counter != m.counter {
-				hits = append(hits, in[idx-f.index+1:idx+1])
-				f.counter = m.counter
-			}
+		o := s + w
+		if table[o+1] != 0 && table[o+2] != counter {
+			table[o+2] = counter
+			hits = append(hits, in[idx-int(table[o+1]):idx])
+		}
 
-			for !f.suffix.root {
-				f = f.suffix
-				if f.counter != m.counter {
-					hits = append(hits, in[idx-f.index+1:idx+1])
-					f.counter = m.counter
-				} else {
-					// There's no point working our way up the
-					// suffixes if it's been done before for this call
-					// to Match. The matches are already in hits.
-					break
-				}
+		for table[o] != 0 {
+			o = int(table[o]) + w
+			if table[o+2] == counter {
+				break
 			}
+			table[o+2] = counter
+			hits = append(hits, in[idx-int(table[o+1]):idx])
 		}
 	}
 
@@ -407,23 +418,24 @@ func (m *Matcher) FindAllString(in string) []string {
 
 // Match returns true if the input slice contains any subslices
 func (m *Matcher) Match(in []byte) bool {
-	n := m.root
-	for _, b := range in {
-		c := int(b)
-		if !n.root && n.child[c] == nil {
-			n = n.fails[c]
+	table, w := m.table, m.width
+	alphabet, starts := &m.alphabet, &m.starts
+
+	s := 0
+	for idx := 0; idx < len(in); {
+		if s == 0 {
+			for idx < len(in) && !starts[in[idx]] {
+				idx++
+			}
+			if idx == len(in) {
+				break
+			}
 		}
 
-		if n.child[c] != nil {
-			n = n.child[c]
-
-			if n.output {
-				return true
-			}
-
-			for !n.suffix.root {
-				return true
-			}
+		s = int(table[s+int(alphabet[in[idx]])])
+		idx++
+		if s != 0 && (table[s+w+1] != 0 || table[s+w] != 0) {
+			return true
 		}
 	}
 	return false
@@ -431,23 +443,24 @@ func (m *Matcher) Match(in []byte) bool {
 
 // MatchString returns true if the input slice contains any subslices
 func (m *Matcher) MatchString(in string) bool {
-	n := m.root
-	slen := len(in)
-	for idx := 0; idx < slen; idx++ {
-		c := int(in[idx])
-		if !n.root && n.child[c] == nil {
-			n = n.fails[c]
+	table, w := m.table, m.width
+	alphabet, starts := &m.alphabet, &m.starts
+
+	s := 0
+	for idx := 0; idx < len(in); {
+		if s == 0 {
+			for idx < len(in) && !starts[in[idx]] {
+				idx++
+			}
+			if idx == len(in) {
+				break
+			}
 		}
-		if n.child[c] != nil {
-			n = n.child[c]
 
-			if n.output {
-				return true
-			}
-
-			for !n.suffix.root {
-				return true
-			}
+		s = int(table[s+int(alphabet[in[idx]])])
+		idx++
+		if s != 0 && (table[s+w+1] != 0 || table[s+w] != 0) {
+			return true
 		}
 	}
 	return false

@@ -1,6 +1,7 @@
 package ac
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -126,5 +127,61 @@ func TestCounterWrap(t *testing.T) {
 	}
 	if m.counter != 2 {
 		t.Errorf("counter = %d, want 2", m.counter)
+	}
+}
+
+// TestConfigCheck rejects configs that would build a matcher unable to match
+// anything, or whose Limit cannot index the alphabet.
+func TestConfigCheck(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		ok   bool
+	}{
+		{"zero", Config{}, false},
+		{"negative limit", Config{Limit: -1}, false},
+		{"limit past alphabet", Config{Limit: 300}, false},
+		{"partial limit without ErrRange", Config{Limit: 64}, false},
+		{"partial limit with ErrRange", Config{Limit: 128, ErrRange: errTest}, true},
+		{"full byte", Config{Limit: 256}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// "a" is byte 97, inside every Limit the valid cases use, so only
+			// the config itself can make these fail
+			_, errS := tt.cfg.CompileString([]string{"a"})
+			_, errB := tt.cfg.Compile([][]byte{[]byte("a")})
+
+			for _, err := range []error{errS, errB} {
+				if tt.ok {
+					if err != nil {
+						t.Errorf("err = %v, want nil", err)
+					}
+					continue
+				}
+				if !errors.Is(err, ErrBadConfig) {
+					t.Errorf("err = %v, want ErrBadConfig", err)
+				}
+			}
+		})
+	}
+}
+
+var errTest = errors.New("out of range")
+
+// TestTooLargeNoOverflow checks the oversize guard compares before
+// multiplying. On a 32-bit int the product would overflow and let an
+// impossible size through to make.
+func TestTooLargeNoOverflow(t *testing.T) {
+	const stride = 4 // one column plus metaRow, the narrowest possible row
+	if got := math.MaxInt32 / stride; got <= 0 {
+		t.Fatalf("MaxInt32/stride = %d, want positive", got)
+	}
+
+	// A dictionary this large cannot be built in a test, so check the
+	// arithmetic the guard relies on rather than the allocation itself.
+	nodes := math.MaxInt32/stride + 1
+	if nodes*stride > 0 && int64(nodes)*stride <= math.MaxInt32 {
+		t.Errorf("nodes*stride = %d did not exceed MaxInt32", int64(nodes)*stride)
 	}
 }

@@ -12,6 +12,7 @@ package ac
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 )
@@ -20,6 +21,9 @@ const maxchar = 256
 
 // ErrTooLarge is returned when the dictionary is too large to compile
 var ErrTooLarge = errors.New("dictionary too large")
+
+// ErrBadConfig is returned when a Config is not usable
+var ErrBadConfig = errors.New("invalid config")
 
 // Config describes the alphabet a Matcher accepts. It exists so that the
 // acascii package can restrict the dictionary to ASCII and fold higher input
@@ -38,6 +42,18 @@ type Config struct {
 
 // fullByte allows every byte, which is what this package itself uses.
 var fullByte = Config{Limit: maxchar}
+
+// check rejects a Config that would build a matcher unable to match anything,
+// or one whose Limit cannot index the alphabet.
+func (cfg Config) check() error {
+	if cfg.Limit < 1 || cfg.Limit > maxchar {
+		return fmt.Errorf("%w: Limit %d outside 1..%d", ErrBadConfig, cfg.Limit, maxchar)
+	}
+	if cfg.Limit < maxchar && cfg.ErrRange == nil {
+		return fmt.Errorf("%w: Limit %d excludes bytes, so ErrRange is required", ErrBadConfig, cfg.Limit)
+	}
+	return nil
+}
 
 // metaRow is the number of int32 slots each row carries after its transition
 // columns: the suffix link, the length of any entry ending here, and the
@@ -157,11 +173,13 @@ func (m *Matcher) buildTrie(dictionary [][]byte) error {
 	sort.Sort(sorted)
 
 	stride := m.width + metaRow
-	size := countNodesBytes(sorted) * stride
-	if size > math.MaxInt32 {
+	// Compare before multiplying: on a 32-bit int the product would overflow
+	// and pass the check.
+	nodes := countNodesBytes(sorted)
+	if nodes > math.MaxInt32/stride {
 		return ErrTooLarge
 	}
-	m.table = make([]int32, size)
+	m.table = make([]int32, nodes*stride)
 
 	free := int32(stride)
 	for _, blice := range sorted {
@@ -205,11 +223,13 @@ func (m *Matcher) buildTrieString(dictionary []string) error {
 	sort.Strings(sorted)
 
 	stride := m.width + metaRow
-	size := countNodesString(sorted) * stride
-	if size > math.MaxInt32 {
+	// Compare before multiplying: on a 32-bit int the product would overflow
+	// and pass the check.
+	nodes := countNodesString(sorted)
+	if nodes > math.MaxInt32/stride {
 		return ErrTooLarge
 	}
-	m.table = make([]int32, size)
+	m.table = make([]int32, nodes*stride)
 
 	free := int32(stride)
 	for _, s := range sorted {
@@ -301,6 +321,9 @@ func (m *Matcher) nextCounter() int32 {
 
 // Compile creates a new Matcher over cfg's alphabet using a list of []byte
 func (cfg Config) Compile(dictionary [][]byte) (*Matcher, error) {
+	if err := cfg.check(); err != nil {
+		return nil, err
+	}
 	m := &Matcher{cfg: cfg}
 	if err := m.buildTrie(dictionary); err != nil {
 		return nil, err
@@ -310,6 +333,9 @@ func (cfg Config) Compile(dictionary [][]byte) (*Matcher, error) {
 
 // CompileString creates a new Matcher over cfg's alphabet using a []string
 func (cfg Config) CompileString(dictionary []string) (*Matcher, error) {
+	if err := cfg.check(); err != nil {
+		return nil, err
+	}
 	m := &Matcher{cfg: cfg}
 	if err := m.buildTrieString(dictionary); err != nil {
 		return nil, err

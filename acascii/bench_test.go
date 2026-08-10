@@ -57,7 +57,9 @@ func BenchmarkCompileRetained(b *testing.B) {
 			}
 			runtime.GC()
 			runtime.ReadMemStats(&after)
-			b.ReportMetric(float64(after.HeapAlloc-before.HeapAlloc), "retained-B")
+			// signed, so that GC noise shrinking the heap stays negative
+			// instead of underflowing to a huge number
+			b.ReportMetric(float64(int64(after.HeapAlloc)-int64(before.HeapAlloc)), "retained-B")
 			b.ReportMetric(0, "ns/op")
 			runtime.KeepAlive(m)
 		})

@@ -50,12 +50,13 @@ true
 
 ## ac/acascii for pure ASCII matching
 
-The `ac/acascii` package assumes the dictionary is all ASCII characters (1-127)
+The `ac/acascii` package assumes the dictionary is all ASCII characters (0-127)
 and returns `ErrNotASCII` otherwise.  Input bytes outside that range are folded
 onto byte 0 rather than matched.
 
 Previously this was about 50% faster and smaller than `ac`, but the two now
-perform the same.  The only difference is its enforcement of ASCII.
+perform the same.  What remains is that `acascii` enforces ASCII and folds
+higher input bytes, where `ac` matches the full byte range.
 
 
 ## IN PROGRESS

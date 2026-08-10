@@ -28,15 +28,6 @@ type Impl struct {
 	Compile           func(dictionary [][]byte) (Matcher, error)
 	MustCompileString func(dictionary []string) Matcher
 	MustCompile       func(dictionary [][]byte) Matcher
-
-	// States reports how many states a compiled matcher holds. Reaching into
-	// unexported state is the package's business, so it supplies the
-	// accessor and the suite supplies the assertions.
-	States func(Matcher) int
-
-	// ExhaustCounter drives the duplicate-suppression counter to the value
-	// just before it wraps.
-	ExhaustCounter func(Matcher)
 }
 
 // Case is one dictionary, one input, and the matches expected from it.
@@ -188,7 +179,6 @@ func Run(t *testing.T, impl Impl) {
 	t.Run("Cases", func(t *testing.T) { runCases(t, impl) })
 	t.Run("Random", func(t *testing.T) { runRandom(t, impl) })
 	t.Run("Must", func(t *testing.T) { runMust(t, impl) })
-	t.Run("ExactSizing", func(t *testing.T) { runExactSizing(t, impl) })
 	t.Run("CounterWrap", func(t *testing.T) { runCounterWrap(t, impl) })
 	t.Run("ByteSweep", func(t *testing.T) { runByteSweep(t, impl) })
 }
@@ -227,39 +217,8 @@ func runByteSweep(t *testing.T, impl Impl) {
 	}
 }
 
-// runExactSizing checks the transition table is sized to the states the
-// dictionary actually needs, with no slack. Sizing it to the sum of the entry
-// lengths instead was the original source of the compile-time blowup, so this
-// counts the distinct prefixes independently of the packages' own counting.
-func runExactSizing(t *testing.T, impl Impl) {
-	dicts := [][]string{
-		{},
-		{""},
-		{"a"},
-		{"a", "a"},
-		{"abc", "abd", "abe"},
-		{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		GenWords(500, 7),
-	}
-	for _, dict := range dicts {
-		seen := make(map[string]bool)
-		for _, d := range dict {
-			for i := 1; i <= len(d); i++ {
-				seen[d[:i]] = true
-			}
-		}
-		want := len(seen) + 1 // plus the root
-
-		if got := impl.States(impl.MustCompileString(dict)); got != want {
-			t.Errorf("dict of %d entries: %d states, want %d", len(dict), got, want)
-		}
-	}
-}
-
-// runCounterWrap exercises the reset performed when the duplicate-suppression
-// counter overflows, which is unreachable in practice but would silently drop
-// matches if it were wrong. Two calls in a row are needed: the first uses the
-// reset counter value, the second proves no stale marker survived.
+// runCounterWrap checks that the duplicate-suppression markers from one call
+// do not leak into the next.
 func runCounterWrap(t *testing.T, impl Impl) {
 	m := impl.MustCompileString([]string{"ab", "b", "abc"})
 	want := m.FindAllString("xabcx")
@@ -267,10 +226,10 @@ func runCounterWrap(t *testing.T, impl Impl) {
 		t.Fatal("expected matches")
 	}
 
-	impl.ExhaustCounter(m)
-	for i := 0; i < 2; i++ {
+	// repeated calls must keep giving the same answer
+	for i := 0; i < 3; i++ {
 		if got := m.FindAllString("xabcx"); !reflect.DeepEqual(got, want) {
-			t.Errorf("call %d after wrap: FindAllString = %q, want %q", i+1, got, want)
+			t.Errorf("call %d: FindAllString = %q, want %q", i+2, got, want)
 		}
 	}
 }

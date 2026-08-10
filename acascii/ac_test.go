@@ -2,7 +2,6 @@ package acascii
 
 import (
 	"fmt"
-	"math"
 	"reflect"
 	"testing"
 
@@ -27,11 +26,6 @@ var impl = actest.Impl{
 	},
 	MustCompileString: func(dictionary []string) actest.Matcher { return MustCompileString(dictionary) },
 	MustCompile:       func(dictionary [][]byte) actest.Matcher { return MustCompile(dictionary) },
-	States: func(m actest.Matcher) int {
-		mm := m.(*Matcher)
-		return len(mm.table) / (mm.width + metaRow)
-	},
-	ExhaustCounter: func(m actest.Matcher) { m.(*Matcher).counter = math.MaxInt32 },
 }
 
 // TestShared runs the behaviour this package has in common with ac.

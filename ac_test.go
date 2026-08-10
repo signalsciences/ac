@@ -27,11 +27,6 @@ var impl = actest.Impl{
 	},
 	MustCompileString: func(dictionary []string) actest.Matcher { return MustCompileString(dictionary) },
 	MustCompile:       func(dictionary [][]byte) actest.Matcher { return MustCompile(dictionary) },
-	States: func(m actest.Matcher) int {
-		mm := m.(*Matcher)
-		return len(mm.table) / (mm.width + metaRow)
-	},
-	ExhaustCounter: func(m actest.Matcher) { m.(*Matcher).counter = math.MaxInt32 },
 }
 
 // TestShared runs the behaviour this package has in common with acascii.
@@ -81,4 +76,55 @@ func FuzzMatcher(f *testing.F) {
 	actest.Fuzz(f, impl, func(dict []string, input string) ([]string, string) {
 		return dict, input
 	})
+}
+
+// TestExactSizing checks the transition table is sized to the states the
+// dictionary needs, with no slack. Sizing it to the sum of the entry lengths
+// instead was the original source of the compile-time blowup, so this counts
+// the distinct prefixes independently of countNodesString.
+func TestExactSizing(t *testing.T) {
+	dicts := [][]string{
+		{},
+		{""},
+		{"a"},
+		{"a", "a"},
+		{"abc", "abd", "abe"},
+		{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
+		actest.GenWords(500, 7),
+	}
+	for _, dict := range dicts {
+		m := MustCompileString(dict)
+
+		seen := make(map[string]bool)
+		for _, d := range dict {
+			for i := 1; i <= len(d); i++ {
+				seen[d[:i]] = true
+			}
+		}
+		want := len(seen) + 1 // plus the root
+
+		if got := len(m.table) / (m.width + metaRow); got != want {
+			t.Errorf("dict of %d entries: %d states, want %d", len(dict), got, want)
+		}
+	}
+}
+
+// TestCounterWrap exercises the reset performed when the counter overflows,
+// which is unreachable in practice but would silently drop matches.
+func TestCounterWrap(t *testing.T) {
+	m := MustCompileString([]string{"ab", "b", "abc"})
+	want := m.FindAllString("xabcx")
+	if len(want) == 0 {
+		t.Fatal("expected matches")
+	}
+
+	m.counter = math.MaxInt32
+	for i := 0; i < 2; i++ {
+		if got := m.FindAllString("xabcx"); !reflect.DeepEqual(got, want) {
+			t.Errorf("call %d after wrap: FindAllString = %q, want %q", i+1, got, want)
+		}
+	}
+	if m.counter != 2 {
+		t.Errorf("counter = %d, want 2", m.counter)
+	}
 }

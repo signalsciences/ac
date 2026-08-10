@@ -18,46 +18,58 @@ import (
 
 const maxchar = 256
 
-// ErrTooLarge is returned when a dictionary needs an automaton whose row
-// offsets would not fit in the int32 the transition table stores.
+// ErrTooLarge is returned when the dictionary is too large to compile
 var ErrTooLarge = errors.New("dictionary too large")
 
+// Config describes the alphabet a Matcher accepts. It exists so that the
+// acascii package can restrict the dictionary to ASCII and fold higher input
+// bytes onto byte 0, without duplicating the automaton. Callers of this
+// package want Compile or CompileString instead.
+type Config struct {
+	// Limit is one past the highest byte a dictionary entry may hold
+	Limit int
+
+	// ErrRange is returned for a dictionary byte at or above Limit
+	ErrRange error
+
+	// FoldHigh folds input bytes at or above Limit onto byte 0
+	FoldHigh bool
+}
+
+// fullByte allows every byte, which is what this package itself uses.
+var fullByte = Config{Limit: maxchar}
+
 // metaRow is the number of int32 slots each row carries after its transition
-// columns: the dictionary-suffix link, the length of the entry ending at the
-// state, and the duplicate-suppression counter.
+// columns: the suffix link, the length of any entry ending here, and the
+// counter.
 const metaRow = 3
 
 // Matcher contains a list of blices to match against
 type Matcher struct {
-	// table holds the entire automaton. Every state owns one row of
-	// width+metaRow int32s, laid out as
+	cfg Config
+
+	// table holds the entire automaton, one row per state:
 	//
 	//	[ transition columns ... | suffix | outLen | counter ]
 	//
-	// A state is identified by the offset of its row rather than by an index,
-	// so a transition is table[s+column]: one add and one load, with no
-	// multiply on the dependency chain that the scan loops are bound by.
-	//
-	// Folding the child pointers and the fail transitions into a single dense
-	// goto table, and folding the per-state data into the same slice, is what
-	// keeps the whole automaton down to one allocation.
+	// A state is the offset of its row, so a transition is
+	// table[s+column]: one add and one load, with no multiply.
 	table []int32
 
-	// width is the number of transition columns in a row.
+	// width is the number of transition columns in a row
 	width int
 
-	// alphabet maps an input byte to its transition column. Bytes occurring
-	// in no dictionary entry share column 0, whose transition is always back
-	// to the root, so the table only pays for the bytes actually used.
+	// alphabet maps an input byte to its transition column. Bytes in no
+	// dictionary entry share column 0, which always returns to the root, so
+	// the table only pays for the bytes actually used.
 	alphabet [maxchar]uint16
 
-	// starts reports whether a byte can begin a dictionary entry. While no
-	// match is in progress the scanners use it to skip input without walking
-	// the state machine.
+	// starts reports whether a byte can begin a dictionary entry, so that
+	// the scanners can skip input without walking the state machine
 	starts [maxchar]bool
 
-	// counter counts the number of matches done, and is used to prevent
-	// output of multiple matches of the same string
+	// counter counts the number of matches done, and is used to
+	// prevent output of multiple matches of the same string
 	counter int32
 }
 
@@ -65,20 +77,26 @@ type Matcher struct {
 // Unused bytes keep column 0.
 func (m *Matcher) setAlphabet(present *[maxchar]bool) {
 	width := 1
-	for b := 0; b < maxchar; b++ {
+	for b := 0; b < m.cfg.Limit; b++ {
 		if present[b] {
 			m.alphabet[b] = uint16(width)
 			width++
 		}
 	}
+
+	if m.cfg.FoldHigh {
+		for b := m.cfg.Limit; b < maxchar; b++ {
+			m.alphabet[b] = m.alphabet[0]
+		}
+	}
+
 	m.width = width
 }
 
-// countNodesString returns the exact number of states a sorted dictionary
-// needs: its number of distinct prefixes, plus the root. Sorting is what
-// makes the count exact -- in lexicographic order an entry's longest common
-// prefix with all earlier entries is its longest common prefix with its
-// immediate predecessor.
+// countNodesString returns the number of states a sorted dictionary needs:
+// its number of distinct prefixes, plus the root. Sorting makes the count
+// exact, because in lexicographic order an entry's longest common prefix with
+// all earlier entries is its longest common prefix with its predecessor.
 func countNodesString(sorted []string) int {
 	count := 1
 	for i, s := range sorted {
@@ -117,16 +135,19 @@ func (b blices) Len() int           { return len(b) }
 func (b blices) Less(i, j int) bool { return bytes.Compare(b[i], b[j]) < 0 }
 func (b blices) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 
-// buildTrie builds the fundamental trie structure from a set of blices.
+// buildTrie builds the fundamental trie structure from a set of
+// blices.
 //
-// While the trie is being built the transition columns hold plain child
-// links, where 0 means "no child" -- unambiguous, because the root's row sits
-// at offset 0 and the root can never be a child. link then rewrites them into
-// a complete goto table.
+// While building, the transition columns hold plain child links, where 0
+// means "no child": the root's row is at offset 0, so it is never a child.
+// link then rewrites them into a complete goto table.
 func (m *Matcher) buildTrie(dictionary [][]byte) error {
 	var present [maxchar]bool
 	for _, blice := range dictionary {
 		for _, b := range blice {
+			if int(b) >= m.cfg.Limit {
+				return m.cfg.ErrRange
+			}
 			present[b] = true
 		}
 	}
@@ -156,9 +177,8 @@ func (m *Matcher) buildTrie(dictionary [][]byte) error {
 			cur = int(t)
 		}
 
-		// cur now points at the state representing a dictionary entry. Empty
-		// entries land on the root, which is never reported, so they are
-		// skipped -- as they were before.
+		// cur now points at the state representing a dictionary
+		// entry. Empty entries land on the root, which is never reported.
 		if len(blice) > 0 {
 			m.table[cur+m.width+1] = int32(len(blice))
 		}
@@ -173,6 +193,9 @@ func (m *Matcher) buildTrieString(dictionary []string) error {
 	var present [maxchar]bool
 	for _, s := range dictionary {
 		for i := 0; i < len(s); i++ {
+			if int(s[i]) >= m.cfg.Limit {
+				return m.cfg.ErrRange
+			}
 			present[s[i]] = true
 		}
 	}
@@ -211,26 +234,25 @@ func (m *Matcher) buildTrieString(dictionary []string) error {
 	return nil
 }
 
-// link rewrites the child links left by the trie build into a complete goto
-// table and fills in the dictionary-suffix links, in one breadth-first pass.
+// link rewrites the child links into a complete goto table and fills in the
+// suffix links, in one breadth-first pass.
 //
-// Because the pass visits states in order of increasing depth, the row of a
-// state's fail target is always fully converted by the time it is needed, so
-// a missing child can simply inherit the fail target's transition. That is
-// what removes the need for a separate fail table at match time.
+// The pass visits states in order of increasing depth, so the row of a
+// state's fail target is already converted when it is needed, and a missing
+// child can inherit the fail target's transition.
 func (m *Matcher) link() {
 	w := m.width
 	stride := int32(w + metaRow)
 	count := len(m.table) / int(stride)
 
 	// fail maps a state index to the row offset of its fail target. The
-	// root's own row offset is 0, which is also the zero value, so states one
-	// byte deep need no initialisation.
+	// root's offset is 0, which is also the zero value, so states one byte
+	// deep need no initialisation.
 	fail := make([]int32, count)
 	queue := make([]int32, 0, count)
 
-	// The root's row already is a valid goto row: a missing child reads as 0,
-	// which is the root itself.
+	// The root's row is already a valid goto row: a missing child reads as
+	// 0, which is the root itself.
 	for c := 0; c < w; c++ {
 		if t := m.table[c]; t != 0 {
 			queue = append(queue, t/stride)
@@ -263,9 +285,8 @@ func (m *Matcher) link() {
 	}
 }
 
-// nextCounter advances the duplicate-suppression counter. On the practically
-// unreachable wrap it clears the per-state markers, so that a stale marker
-// can never suppress a real match.
+// nextCounter advances the counter. On the practically unreachable wrap it
+// clears the per-state markers, so a stale marker cannot suppress a match.
 func (m *Matcher) nextCounter() int32 {
 	m.counter++
 	if m.counter <= 0 {
@@ -278,41 +299,22 @@ func (m *Matcher) nextCounter() int32 {
 	return m.counter
 }
 
-// Compile creates a new Matcher using a list of []byte
-func Compile(dictionary [][]byte) (*Matcher, error) {
-	m := new(Matcher)
+// Compile creates a new Matcher over cfg's alphabet using a list of []byte
+func (cfg Config) Compile(dictionary [][]byte) (*Matcher, error) {
+	m := &Matcher{cfg: cfg}
 	if err := m.buildTrie(dictionary); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-// MustCompile returns a Matcher or panics
-func MustCompile(dictionary [][]byte) *Matcher {
-	m, err := Compile(dictionary)
-	if err != nil {
-		panic(err)
-	}
-	return m
-}
-
-// CompileString creates a new Matcher used to match against a set
-// of strings (this is a helper to make initialization easy)
-func CompileString(dictionary []string) (*Matcher, error) {
-	m := new(Matcher)
+// CompileString creates a new Matcher over cfg's alphabet using a []string
+func (cfg Config) CompileString(dictionary []string) (*Matcher, error) {
+	m := &Matcher{cfg: cfg}
 	if err := m.buildTrieString(dictionary); err != nil {
 		return nil, err
 	}
 	return m, nil
-}
-
-// MustCompileString returns a Matcher or panics
-func MustCompileString(dictionary []string) *Matcher {
-	m, err := CompileString(dictionary)
-	if err != nil {
-		panic(err)
-	}
-	return m
 }
 
 // FindAll searches in for blices and returns all the blices found
@@ -329,10 +331,8 @@ func (m *Matcher) FindAll(in []byte) [][]byte {
 	s := 0
 	for idx := 0; idx < len(in); {
 		if s == 0 {
-			// Nothing is partially matched, so any byte that cannot begin an
-			// entry can be stepped over. These loads do not depend on one
-			// another, unlike the transitions below, so this runs several
-			// times faster than driving the state machine.
+			// Nothing is partially matched, so any byte that cannot
+			// begin an entry can be stepped over.
 			for idx < len(in) && !starts[in[idx]] {
 				idx++
 			}
@@ -464,4 +464,33 @@ func (m *Matcher) MatchString(in string) bool {
 		}
 	}
 	return false
+}
+
+// Compile creates a new Matcher using a list of []byte
+func Compile(dictionary [][]byte) (*Matcher, error) {
+	return fullByte.Compile(dictionary)
+}
+
+// MustCompile returns a Matcher or panics
+func MustCompile(dictionary [][]byte) *Matcher {
+	m, err := Compile(dictionary)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+// CompileString creates a new Matcher used to match against a set
+// of strings (this is a helper to make initialization easy)
+func CompileString(dictionary []string) (*Matcher, error) {
+	return fullByte.CompileString(dictionary)
+}
+
+// MustCompileString returns a Matcher or panics
+func MustCompileString(dictionary []string) *Matcher {
+	m, err := CompileString(dictionary)
+	if err != nil {
+		panic(err)
+	}
+	return m
 }

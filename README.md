@@ -1,6 +1,6 @@
 # ac
 
-[![GoDoc](https://godoc.org/github.com/signalsciences/ac?status.svg)](https://godoc.org/github.com/signalsciences/ac) [![Actions Status](https://github.com/signalsciences/ac/workflows/lint/badge.svg)](https://github.com/signalsciences/ac/actions)
+[![GoDoc](https://godoc.org/github.com/signalsciences/ac?status.svg)](https://godoc.org/github.com/signalsciences/ac) [![Actions Status](https://github.com/signalsciences/ac/workflows/ci/badge.svg)](https://github.com/signalsciences/ac/actions)
 
 Golang implementation of Aho-Corasick for rapid substring matching on either byte
 strings or ASCII strings.
@@ -42,15 +42,21 @@ Output:
 true
 ```
 
+## Concurrency
+
+`FindAll` and `FindAllString` are not safe to call concurrently on a shared
+`Matcher`.  Give each goroutine its own, or serialize the calls.
+
+
 ## ac/acascii for pure ASCII matching
 
-The `ac/acascii` package assumes the dictionary is all ASCII characters (1-127) without NULL bytes.  This results in during setup:
+The `ac/acascii` package assumes the dictionary is all ASCII characters (0-127)
+and returns `ErrNotASCII` otherwise.  Input bytes outside that range are folded
+onto byte 0 rather than matched.
 
-* 50% less memory allocations
-* 50% less memory users
-* 50% less CPU time
-
-as compared to the plain `ac` package.
+Previously this was about 50% faster and smaller than `ac`, but the two now
+perform the same.  What remains is that `acascii` enforces ASCII and folds
+higher input bytes, where `ac` matches the full byte range.
 
 
 ## IN PROGRESS

@@ -1,235 +1,60 @@
 package ac
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"testing"
+
+	"github.com/signalsciences/ac/internal/actest"
 )
 
-var cases = []struct {
-	name    string // matches original test name from cloudflare/ahocorasick
-	dict    []string
-	input   string
-	matches []string
-}{
-	{
-		"TestNoPatterns",
-		[]string{},
-		"",
-		nil,
-	},
-	{
-		"TestNoData",
-		[]string{"foo", "baz", "bar"},
-		"",
-		nil,
-	},
-	{
-		"TestSuffixes",
-		[]string{"Superman", "uperman", "perman", "erman"},
-		"The Man Of Steel: Superman",
-		[]string{"Superman", "uperman", "perman", "erman"},
-	},
-	{
-		"TestPrefixes",
-		[]string{"Superman", "Superma", "Superm", "Super"},
-		"The Man Of Steel: Superman",
-		[]string{"Super", "Superm", "Superma", "Superman"},
-	},
-	{
-		"TestInterior",
-		[]string{"Steel", "tee", "e"},
-		"The Man Of Steel: Superman",
-		[]string{"e", "tee", "Steel"},
-	},
-	{
-		"TestMatchAtStart",
-		[]string{"The", "Th", "he"},
-		"The Man Of Steel: Superman",
-		[]string{"Th", "The", "he"},
-	},
-	{
-		"TestMatchAtEnd",
-		[]string{"teel", "eel", "el"},
-		"The Man Of Steel",
-		[]string{"teel", "eel", "el"},
-	},
-	{
-		"TestOverlappingPatterns",
-		[]string{"Man ", "n Of", "Of S"},
-		"The Man Of Steel",
-		[]string{"Man ", "n Of", "Of S"},
-	},
-	{
-		"TestMultipleMatches",
-		[]string{"The", "Man", "an"},
-		"A Man A Plan A Canal: Panama, which Man Planned The Canal",
-		[]string{"Man", "an", "The"},
-	},
-	{
-		"TestSingleCharacterMatches",
-		[]string{"a", "M", "z"},
-		"A Man A Plan A Canal: Panama, which Man Planned The Canal",
-		[]string{"M", "a"}},
-	{
-		"TestNothingMatches",
-		[]string{"baz", "bar", "foo"},
-		"A Man A Plan A Canal: Panama, which Man Planned The Canal",
-		nil,
-	},
-	{
-		"Wikipedia1",
-		[]string{"a", "ab", "bc", "bca", "c", "caa"},
-		"abccab",
-		[]string{"a", "ab", "bc", "c"},
-	},
-	{
-		"Wikipedia2",
-		[]string{"a", "ab", "bc", "bca", "c", "caa"},
-		"bccab",
-		[]string{"bc", "c", "a", "ab"},
-	},
-	{
-		"Wikipedia3",
-		[]string{"a", "ab", "bc", "bca", "c", "caa"},
-		"bccb",
-		[]string{"bc", "c"},
-	},
-	{
-		"Browser1",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari"},
-	},
-	{
-		"Browser2",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mozilla/5.0 (Mac; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36",
-		[]string{"Mozilla", "Mac", "Safari"},
-	},
-	{
-		"Browser3",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mozilla/5.0 (Moc; Intel Computer OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36",
-		[]string{"Mozilla", "Safari"},
-	},
-	{
-		"Browser4",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mozilla/5.0 (Moc; Intel Computer OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Sofari/537.36",
-		[]string{"Mozilla"},
-	},
-	{
-		"Browser5",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mazilla/5.0 (Moc; Intel Computer OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Sofari/537.36",
-		nil,
-	},
-	{
-		// this is to make sure backtracking works.  We get a partial
-		// match of "Superwoman" with "Superman".  Then we need to make
-		// sure that we restart the search and find "per".  Some implementations
-		// had bugs that didn't backtrack (really start over) and didn't match
-		// "per"
-		"Backtrack",
-		[]string{"Superwoman", "per"},
-		"The Man Of Steel: Superman",
-		[]string{"per"},
-	},
-	{
-		"NotAsciiInput",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage", "Gecko"},
-		"Mazilla/5.0 \u0000 (Moc; Intel Computer OS X 10_7_5) AppleWebKit/537.36 \uFFFF (KHTML, like Gecko) Chrome/30.0.1599.101 Sofari/537.36",
-		[]string{"Gecko"},
-	},
-}
-
-func TestAC(t *testing.T) {
-	for _, tt := range cases {
-		m, err := CompileString(tt.dict)
+// impl adapts this package for the shared behaviour suite.
+var impl = actest.Impl{
+	CompileString: func(dictionary []string) (actest.Matcher, error) {
+		m, err := CompileString(dictionary)
 		if err != nil {
-			t.Fatalf("%s:unable to compile %s", tt.name, err)
+			return nil, err
 		}
-
-		//
-		matches := m.FindAllString(tt.input)
-		if !reflect.DeepEqual(matches, tt.matches) {
-			t.Errorf("%s: FindAllString want %v, got %v", tt.name, tt.matches, matches)
+		return m, nil
+	},
+	Compile: func(dictionary [][]byte) (actest.Matcher, error) {
+		m, err := Compile(dictionary)
+		if err != nil {
+			return nil, err
 		}
-
-		//
-		contains := m.MatchString(tt.input)
-		if contains {
-			if len(tt.matches) == 0 {
-				t.Errorf("%s: MatchString want false, but got true", tt.name)
-			}
-		} else {
-			// does not contain, but got matches
-			if len(tt.matches) != 0 {
-				t.Errorf("%s: MatchString want true, but got false", tt.name)
-			}
-		}
-	}
+		return m, nil
+	},
+	MustCompileString: func(dictionary []string) actest.Matcher { return MustCompileString(dictionary) },
+	MustCompile:       func(dictionary [][]byte) actest.Matcher { return MustCompile(dictionary) },
 }
 
-func TestACBlices(t *testing.T) {
-	for _, tt := range cases {
-		var dict [][]byte
-		for _, d := range tt.dict {
-			dict = append(dict, []byte(d))
-		}
-		m := MustCompile(dict)
-
-		matches := m.FindAll([]byte(tt.input))
-		var mb [][]byte
-		for _, m := range matches {
-			mb = append(mb, []byte(m))
-		}
-		if !reflect.DeepEqual(matches, mb) {
-			t.Errorf("%s: FindAll = %v, want %v", tt.name, mb, matches)
-		}
-
-		contains := m.Match([]byte(tt.input))
-		if contains {
-			if len(tt.matches) == 0 {
-				t.Errorf("%s: MatchString = true, want false", tt.name)
-			}
-		} else {
-			// does not contain, but got matches
-			if len(tt.matches) != 0 {
-				t.Errorf("%s: Match = false, want true", tt.name)
-			}
-		}
-
-	}
+// TestShared runs the behaviour this package has in common with acascii.
+func TestShared(t *testing.T) {
+	actest.Run(t, impl)
 }
 
-func TestNonASCIIDictionary(t *testing.T) {
-	dict := []string{"hello world", "こんにちは世界"}
-	_, err := CompileString(dict)
-	if err != nil {
-		t.Errorf("error compiling matcher: %s", err)
+// TestNonASCII covers the full byte range, which this package indexes and
+// acascii does not.
+func TestNonASCII(t *testing.T) {
+	dict := []string{"héllo", "日本", "\x00\xff", "lo\xff", "本語"}
+	inputs := []string{
+		"say héllo to 日本語 and \x00\xff bytes",
+		"héllo\xffhéllo",
+		"日本語日本",
+		"",
 	}
-}
-
-var (
-	source1  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36"
-	source1b = []byte(source1)
-	dict1    = []string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"}
-	dict2    = []string{"Googlebot", "bingbot", "msnbot", "Yandex", "Baiduspider"}
-	re1      = MustCompileString(dict1)
-	re2      = MustCompileString(dict2)
-)
-
-// this is to prevent optimizer tricks
-var result1 bool
-
-func BenchmarkAC1(b *testing.B) {
-	var result bool
-	for i := 0; i < b.N; i++ {
-		result = re1.MatchString(source1)
+	for _, in := range inputs {
+		m, err := CompileString(dict)
+		if err != nil {
+			t.Fatalf("CompileString: %s", err)
+		}
+		want := actest.NaiveFindAllString(dict, in)
+		if got := m.FindAllString(in); !reflect.DeepEqual(got, want) {
+			t.Errorf("input %q: FindAllString = %q, want %q", in, got, want)
+		}
 	}
-	result1 = result
 }
 
 func ExampleMatcher_FindAllString() {
@@ -246,17 +71,130 @@ func ExampleMatcher_MatchString() {
 	// Output: true
 }
 
-func BenchmarkAC2(b *testing.B) {
-	var result bool
-	for i := 0; i < b.N; i++ {
-		result = re2.MatchString(source1)
-	}
-	result1 = result
+// FuzzMatcher checks the matcher against the brute-force oracle. This package
+// indexes every byte, so nothing needs adjusting.
+func FuzzMatcher(f *testing.F) {
+	actest.Fuzz(f, impl, func(dict []string, input string) ([]string, string) {
+		return dict, input
+	})
 }
-func BenchmarkAC2Byte(b *testing.B) {
-	var result bool
-	for i := 0; i < b.N; i++ {
-		result = re2.Match(source1b)
+
+// TestExactSizing checks the transition table is sized to the states the
+// dictionary needs, with no slack. Sizing it to the sum of the entry lengths
+// instead was the original source of the compile-time blowup, so this counts
+// the distinct prefixes independently of countNodesString.
+func TestExactSizing(t *testing.T) {
+	dicts := [][]string{
+		{},
+		{""},
+		{"a"},
+		{"a", "a"},
+		{"abc", "abd", "abe"},
+		{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
+		actest.GenWords(500, 7),
 	}
-	result1 = result
+	for _, dict := range dicts {
+		m := MustCompileString(dict)
+
+		seen := make(map[string]bool)
+		for _, d := range dict {
+			for i := 1; i <= len(d); i++ {
+				seen[d[:i]] = true
+			}
+		}
+		want := len(seen) + 1 // plus the root
+
+		if got := len(m.table) / (m.width + metaRow); got != want {
+			t.Errorf("dict of %d entries: %d states, want %d", len(dict), got, want)
+		}
+	}
+}
+
+// TestCounterWrap exercises the reset performed when the counter overflows,
+// which is unreachable in practice but would silently drop matches.
+func TestCounterWrap(t *testing.T) {
+	m := MustCompileString([]string{"ab", "b", "abc"})
+	want := m.FindAllString("xabcx")
+	if len(want) == 0 {
+		t.Fatal("expected matches")
+	}
+
+	m.counter = math.MaxInt32
+	for i := 0; i < 2; i++ {
+		if got := m.FindAllString("xabcx"); !reflect.DeepEqual(got, want) {
+			t.Errorf("call %d after wrap: FindAllString = %q, want %q", i+1, got, want)
+		}
+	}
+	if m.counter != 2 {
+		t.Errorf("counter = %d, want 2", m.counter)
+	}
+}
+
+// TestConfigCheck rejects configs that would build a matcher unable to match
+// anything, or whose Limit cannot index the alphabet.
+func TestConfigCheck(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		ok   bool
+	}{
+		{"zero means no limit", Config{}, true},
+		{"negative limit", Config{Limit: -1}, false},
+		{"limit past alphabet", Config{Limit: 300}, false},
+		{"partial limit without ErrRange", Config{Limit: 64}, false},
+		{"partial limit with ErrRange", Config{Limit: 128, ErrRange: errTest}, true},
+		{"full byte", Config{Limit: 256}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// "a" is byte 97, inside every Limit the valid cases use, so only
+			// the config itself can make these fail
+			_, errS := tt.cfg.CompileString([]string{"a"})
+			_, errB := tt.cfg.Compile([][]byte{[]byte("a")})
+
+			for _, err := range []error{errS, errB} {
+				if tt.ok {
+					if err != nil {
+						t.Errorf("err = %v, want nil", err)
+					}
+					continue
+				}
+				if !errors.Is(err, ErrBadConfig) {
+					t.Errorf("err = %v, want ErrBadConfig", err)
+				}
+			}
+		})
+	}
+}
+
+var errTest = errors.New("out of range")
+
+// TestTooLargeNoOverflow checks the oversize guard compares before
+// multiplying. On a 32-bit int the product would overflow and let an
+// impossible size through to make, panicking instead of returning
+// ErrTooLarge. A dictionary that large cannot be built in a test, so this
+// calls the guard directly.
+func TestTooLargeNoOverflow(t *testing.T) {
+	m := &Matcher{width: 1}
+	stride := m.width + metaRow
+
+	tests := []struct {
+		nodes int
+		want  error
+	}{
+		{1, nil},
+		{math.MaxInt32 / stride, nil},
+		{math.MaxInt32/stride + 1, ErrTooLarge},
+		{math.MaxInt32, ErrTooLarge},
+	}
+	for _, tt := range tests {
+		// a huge allocation would succeed here on a 64-bit host, so only the
+		// rejecting cases actually run the guard to completion
+		if tt.want == nil && tt.nodes > 1<<20 {
+			continue
+		}
+		if got := m.allocTable(tt.nodes); got != tt.want {
+			t.Errorf("allocTable(%d) = %v, want %v", tt.nodes, got, tt.want)
+		}
+	}
 }

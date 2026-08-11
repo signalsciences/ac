@@ -4,232 +4,81 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/signalsciences/ac/internal/actest"
 )
 
-var cases = []struct {
-	name    string // matches original test name from cloudflare/ahocorasick
-	dict    []string
-	input   string
-	matches []string
-}{
-	{
-		"TestNoPatterns",
-		[]string{},
-		"",
-		nil,
-	},
-	{
-		"TestNoData",
-		[]string{"foo", "baz", "bar"},
-		"",
-		nil,
-	},
-	{
-		"TestSuffixes",
-		[]string{"Superman", "uperman", "perman", "erman"},
-		"The Man Of Steel: Superman",
-		[]string{"Superman", "uperman", "perman", "erman"},
-	},
-	{
-		"TestPrefixes",
-		[]string{"Superman", "Superma", "Superm", "Super"},
-		"The Man Of Steel: Superman",
-		[]string{"Super", "Superm", "Superma", "Superman"},
-	},
-	{
-		"TestInterior",
-		[]string{"Steel", "tee", "e"},
-		"The Man Of Steel: Superman",
-		[]string{"e", "tee", "Steel"},
-	},
-	{
-		"TestMatchAtStart",
-		[]string{"The", "Th", "he"},
-		"The Man Of Steel: Superman",
-		[]string{"Th", "The", "he"},
-	},
-	{
-		"TestMatchAtEnd",
-		[]string{"teel", "eel", "el"},
-		"The Man Of Steel",
-		[]string{"teel", "eel", "el"},
-	},
-	{
-		"TestOverlappingPatterns",
-		[]string{"Man ", "n Of", "Of S"},
-		"The Man Of Steel",
-		[]string{"Man ", "n Of", "Of S"},
-	},
-	{
-		"TestMultipleMatches",
-		[]string{"The", "Man", "an"},
-		"A Man A Plan A Canal: Panama, which Man Planned The Canal",
-		[]string{"Man", "an", "The"},
-	},
-	{
-		"TestSingleCharacterMatches",
-		[]string{"a", "M", "z"},
-		"A Man A Plan A Canal: Panama, which Man Planned The Canal",
-		[]string{"M", "a"}},
-	{
-		"TestNothingMatches",
-		[]string{"baz", "bar", "foo"},
-		"A Man A Plan A Canal: Panama, which Man Planned The Canal",
-		nil,
-	},
-	{
-		"Wikipedia1",
-		[]string{"a", "ab", "bc", "bca", "c", "caa"},
-		"abccab",
-		[]string{"a", "ab", "bc", "c"},
-	},
-	{
-		"Wikipedia2",
-		[]string{"a", "ab", "bc", "bca", "c", "caa"},
-		"bccab",
-		[]string{"bc", "c", "a", "ab"},
-	},
-	{
-		"Wikipedia3",
-		[]string{"a", "ab", "bc", "bca", "c", "caa"},
-		"bccb",
-		[]string{"bc", "c"},
-	},
-	{
-		"Browser1",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari"},
-	},
-	{
-		"Browser2",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mozilla/5.0 (Mac; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36",
-		[]string{"Mozilla", "Mac", "Safari"},
-	},
-	{
-		"Browser3",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mozilla/5.0 (Moc; Intel Computer OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36",
-		[]string{"Mozilla", "Safari"},
-	},
-	{
-		"Browser4",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mozilla/5.0 (Moc; Intel Computer OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Sofari/537.36",
-		[]string{"Mozilla"},
-	},
-	{
-		"Browser5",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"},
-		"Mazilla/5.0 (Moc; Intel Computer OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Sofari/537.36",
-		nil,
-	},
-	{
-		// this is to make sure backtracking works.  We get a partial
-		// match of "Superwoman" with "Superman".  Then we need to make
-		// sure that we restart the search and find "per".  Some implementations
-		// had bugs that didn't backtrack (really start over) and didn't match
-		// "per"
-		"Backtrack",
-		[]string{"Superwoman", "per"},
-		"The Man Of Steel: Superman",
-		[]string{"per"},
-	},
-	{
-		"NotAsciiInput",
-		[]string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage", "Gecko"},
-		"Mazilla/5.0 \u0000 (Moc; Intel Computer OS X 10_7_5) AppleWebKit/537.36 \uFFFF (KHTML, like Gecko) Chrome/30.0.1599.101 Sofari/537.36",
-		[]string{"Gecko"},
-	},
-}
-
-func TestAC(t *testing.T) {
-	for _, tt := range cases {
-		m, err := CompileString(tt.dict)
+// impl adapts this package for the shared behaviour suite.
+var impl = actest.Impl{
+	CompileString: func(dictionary []string) (actest.Matcher, error) {
+		m, err := CompileString(dictionary)
 		if err != nil {
-			t.Fatalf("%s:unable to compile %s", tt.name, err)
+			return nil, err
 		}
-
-		//
-		matches := m.FindAllString(tt.input)
-		if !reflect.DeepEqual(matches, tt.matches) {
-			t.Errorf("%s: FindAllString want %v, got %v", tt.name, tt.matches, matches)
+		return m, nil
+	},
+	Compile: func(dictionary [][]byte) (actest.Matcher, error) {
+		m, err := Compile(dictionary)
+		if err != nil {
+			return nil, err
 		}
-
-		//
-		contains := m.MatchString(tt.input)
-		if contains {
-			if len(tt.matches) == 0 {
-				t.Errorf("%s: MatchString want false, but got true", tt.name)
-			}
-		} else {
-			// does not contain, but got matches
-			if len(tt.matches) != 0 {
-				t.Errorf("%s: MatchString want true, but got false", tt.name)
-			}
-		}
-	}
+		return m, nil
+	},
+	MustCompileString: func(dictionary []string) actest.Matcher { return MustCompileString(dictionary) },
+	MustCompile:       func(dictionary [][]byte) actest.Matcher { return MustCompile(dictionary) },
 }
 
-func TestACBlices(t *testing.T) {
-	for _, tt := range cases {
-		var dict [][]byte
-		for _, d := range tt.dict {
-			dict = append(dict, []byte(d))
-		}
-		m := MustCompile(dict)
-
-		matches := m.FindAll([]byte(tt.input))
-		var mb [][]byte
-		for _, m := range matches {
-			mb = append(mb, []byte(m))
-		}
-		if !reflect.DeepEqual(matches, mb) {
-			t.Errorf("%s: FindAll = %v, want %v", tt.name, mb, matches)
-		}
-
-		contains := m.Match([]byte(tt.input))
-		if contains {
-			if len(tt.matches) == 0 {
-				t.Errorf("%s: MatchString = true, want false", tt.name)
-			}
-		} else {
-			// does not contain, but got matches
-			if len(tt.matches) != 0 {
-				t.Errorf("%s: Match = false, want true", tt.name)
-			}
-		}
-
-	}
+// TestShared runs the behaviour this package has in common with ac.
+func TestShared(t *testing.T) {
+	actest.Run(t, impl)
 }
 
+// TestNonASCIIDictionary rejects dictionaries with bytes this package cannot
+// index. The ac package accepts them.
 func TestNonASCIIDictionary(t *testing.T) {
-	dict := []string{"hello world", "こんにちは世界"}
-	_, err := CompileString(dict)
-	if err == nil {
-		t.Errorf("expected error compiling ASCII matcher")
+	if _, err := CompileString([]string{"hello world", "こんにちは世界"}); err != ErrNotASCII {
+		t.Errorf("CompileString err = %v, want %v", err, ErrNotASCII)
+	}
+	if _, err := Compile([][]byte{[]byte("ok"), {0x80}}); err != ErrNotASCII {
+		t.Errorf("Compile err = %v, want %v", err, ErrNotASCII)
 	}
 }
 
-var (
-	source1  = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36"
-	source1b = []byte(source1)
-	dict1    = []string{"Mozilla", "Mac", "Macintosh", "Safari", "Sausage"}
-	dict2    = []string{"Googlebot", "bingbot", "msnbot", "Yandex", "Baiduspider"}
-	re1      = MustCompileString(dict1)
-	re2      = MustCompileString(dict2)
-)
-
-// this is to prevent optimizer tricks
-var result1 bool
-
-func BenchmarkAC1(b *testing.B) {
-	var result bool
-	for i := 0; i < b.N; i++ {
-		result = re1.MatchString(source1)
+// TestNonASCIIInput pins the long-standing behaviour that an input byte
+// outside ASCII is folded onto byte 0 rather than rejected.
+func TestNonASCIIInput(t *testing.T) {
+	m := MustCompileString([]string{"a\x00b", "cd"})
+	tests := []struct {
+		in   string
+		want []string
+	}{
+		{"a\x00b", []string{"a\x00b"}},
+		// hits are subslices of the input, so the folded byte is echoed back
+		{"a\xffb", []string{"a\xffb"}},
+		{"a\xc3\xa9b", nil}, // two folded bytes, so no match
+		{"x\xffcd", []string{"cd"}},
 	}
-	result1 = result
+	for _, tt := range tests {
+		if got := m.FindAllString(tt.in); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("FindAllString(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+
+	// Every byte above ASCII must fold identically, including 0x80, which an
+	// earlier off-by-one in Match let through unclamped.
+	base := MustCompileString([]string{"a\x00c"})
+	for b := 0x80; b < 0x100; b++ {
+		in := []byte{'a', byte(b), 'c'}
+		if !base.Match(in) {
+			t.Errorf("byte %#02x: Match = false, want true", b)
+		}
+		if !base.MatchString(string(in)) {
+			t.Errorf("byte %#02x: MatchString = false, want true", b)
+		}
+		if got := base.FindAll(in); len(got) != 1 || !reflect.DeepEqual(got[0], in) {
+			t.Errorf("byte %#02x: FindAll = %q, want [%q]", b, got, in)
+		}
+	}
 }
 
 func ExampleMatcher_FindAllString() {
@@ -246,17 +95,48 @@ func ExampleMatcher_MatchString() {
 	// Output: true
 }
 
-func BenchmarkAC2(b *testing.B) {
-	var result bool
-	for i := 0; i < b.N; i++ {
-		result = re2.MatchString(source1)
+// TestMustCompilePanics covers the panic path of the Must constructors, which
+// only this package can reach with a dictionary it rejects.
+func TestMustCompilePanics(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		fn   func()
+	}{
+		{"MustCompileString", func() { MustCompileString([]string{"héllo"}) }},
+		{"MustCompile", func() { MustCompile([][]byte{{0x80}}) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != ErrNotASCII {
+					t.Errorf("recover() = %v, want %v", r, ErrNotASCII)
+				}
+			}()
+			tt.fn()
+			t.Error("did not panic")
+		})
 	}
-	result1 = result
 }
-func BenchmarkAC2Byte(b *testing.B) {
-	var result bool
-	for i := 0; i < b.N; i++ {
-		result = re2.Match(source1b)
-	}
-	result1 = result
+
+// FuzzMatcher checks the matcher against the brute-force oracle. Dictionary
+// bytes are brought into range so they compile, and high input bytes are
+// folded up front the way the matcher folds them internally, so the oracle
+// and the matcher are asked the same question.
+func FuzzMatcher(f *testing.F) {
+	actest.Fuzz(f, impl, func(dict []string, input string) ([]string, string) {
+		out := make([]string, len(dict))
+		for i, e := range dict {
+			b := []byte(e)
+			for j := range b {
+				b[j] &= 0x7f
+			}
+			out[i] = string(b)
+		}
+		in := []byte(input)
+		for j := range in {
+			if in[j] >= 0x80 {
+				in[j] = 0
+			}
+		}
+		return out, string(in)
+	})
 }

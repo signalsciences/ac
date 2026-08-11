@@ -138,7 +138,7 @@ func TestConfigCheck(t *testing.T) {
 		cfg  Config
 		ok   bool
 	}{
-		{"zero", Config{}, false},
+		{"zero means no limit", Config{}, true},
 		{"negative limit", Config{Limit: -1}, false},
 		{"limit past alphabet", Config{Limit: 300}, false},
 		{"partial limit without ErrRange", Config{Limit: 64}, false},
@@ -171,17 +171,30 @@ var errTest = errors.New("out of range")
 
 // TestTooLargeNoOverflow checks the oversize guard compares before
 // multiplying. On a 32-bit int the product would overflow and let an
-// impossible size through to make.
+// impossible size through to make, panicking instead of returning
+// ErrTooLarge. A dictionary that large cannot be built in a test, so this
+// calls the guard directly.
 func TestTooLargeNoOverflow(t *testing.T) {
-	const stride = 4 // one column plus metaRow, the narrowest possible row
-	if got := math.MaxInt32 / stride; got <= 0 {
-		t.Fatalf("MaxInt32/stride = %d, want positive", got)
-	}
+	m := &Matcher{width: 1}
+	stride := m.width + metaRow
 
-	// A dictionary this large cannot be built in a test, so check the
-	// arithmetic the guard relies on rather than the allocation itself.
-	nodes := math.MaxInt32/stride + 1
-	if nodes*stride > 0 && int64(nodes)*stride <= math.MaxInt32 {
-		t.Errorf("nodes*stride = %d did not exceed MaxInt32", int64(nodes)*stride)
+	tests := []struct {
+		nodes int
+		want  error
+	}{
+		{1, nil},
+		{math.MaxInt32 / stride, nil},
+		{math.MaxInt32/stride + 1, ErrTooLarge},
+		{math.MaxInt32, ErrTooLarge},
+	}
+	for _, tt := range tests {
+		// a huge allocation would succeed here on a 64-bit host, so only the
+		// rejecting cases actually run the guard to completion
+		if tt.want == nil && tt.nodes > 1<<20 {
+			continue
+		}
+		if got := m.allocTable(tt.nodes); got != tt.want {
+			t.Errorf("allocTable(%d) = %v, want %v", tt.nodes, got, tt.want)
+		}
 	}
 }

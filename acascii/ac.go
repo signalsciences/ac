@@ -26,7 +26,6 @@ var ErrTooLarge = ac.ErrTooLarge
 var ascii = ac.Config{
 	Limit:    128,
 	ErrRange: ErrNotASCII,
-	FoldHigh: true,
 }
 
 // Matcher contains a list of blices to match against

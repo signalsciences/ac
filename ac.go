@@ -26,30 +26,36 @@ var ErrTooLarge = errors.New("dictionary too large")
 var ErrBadConfig = errors.New("invalid config")
 
 // Config describes the alphabet a Matcher accepts. It exists so that the
-// acascii package can restrict the dictionary to ASCII and fold higher input
-// bytes onto byte 0, without duplicating the automaton. Callers of this
-// package want Compile or CompileString instead.
+// acascii package can restrict the dictionary to ASCII without duplicating
+// the automaton. Callers of this package want Compile or CompileString, which
+// accept every byte.
 type Config struct {
-	// Limit is one past the highest byte a dictionary entry may hold
+	// Limit is one past the highest byte a dictionary entry may hold. Zero
+	// means every byte is allowed. A dictionary holding a byte at or above it
+	// is rejected with ErrRange, and an input byte at or above it is folded
+	// onto byte 0.
 	Limit int
 
-	// ErrRange is returned for a dictionary byte at or above Limit
+	// ErrRange is returned for a dictionary byte at or above Limit. It is
+	// required whenever Limit excludes bytes.
 	ErrRange error
-
-	// FoldHigh folds input bytes at or above Limit onto byte 0
-	FoldHigh bool
 }
 
-// fullByte allows every byte, which is what this package itself uses.
-var fullByte = Config{Limit: maxchar}
-
-// check rejects a Config that would build a matcher unable to match anything,
-// or one whose Limit cannot index the alphabet.
-func (cfg Config) check() error {
-	if cfg.Limit < 1 || cfg.Limit > maxchar {
-		return fmt.Errorf("%w: Limit %d outside 1..%d", ErrBadConfig, cfg.Limit, maxchar)
+// limit is Limit with the zero value resolved.
+func (cfg Config) limit() int {
+	if cfg.Limit == 0 {
+		return maxchar
 	}
-	if cfg.Limit < maxchar && cfg.ErrRange == nil {
+	return cfg.Limit
+}
+
+// check rejects a Config whose Limit cannot index the alphabet, or which
+// excludes bytes without saying what to return for them.
+func (cfg Config) check() error {
+	if cfg.Limit < 0 || cfg.Limit > maxchar {
+		return fmt.Errorf("%w: Limit %d outside 0..%d", ErrBadConfig, cfg.Limit, maxchar)
+	}
+	if cfg.limit() < maxchar && cfg.ErrRange == nil {
 		return fmt.Errorf("%w: Limit %d excludes bytes, so ErrRange is required", ErrBadConfig, cfg.Limit)
 	}
 	return nil
@@ -92,44 +98,41 @@ type Matcher struct {
 // setAlphabet gives every byte the dictionary uses its own transition column.
 // Unused bytes keep column 0.
 func (m *Matcher) setAlphabet(present *[maxchar]bool) {
+	limit := m.cfg.limit()
+
 	width := 1
-	for b := 0; b < m.cfg.Limit; b++ {
+	for b := 0; b < limit; b++ {
 		if present[b] {
 			m.alphabet[b] = uint16(width)
 			width++
 		}
 	}
 
-	if m.cfg.FoldHigh {
-		for b := m.cfg.Limit; b < maxchar; b++ {
-			m.alphabet[b] = m.alphabet[0]
-		}
+	// Bytes the dictionary cannot hold share byte 0's column.
+	for b := limit; b < maxchar; b++ {
+		m.alphabet[b] = m.alphabet[0]
 	}
 
 	m.width = width
 }
 
-// countNodesString returns the number of states a sorted dictionary needs:
-// its number of distinct prefixes, plus the root. Sorting makes the count
-// exact, because in lexicographic order an entry's longest common prefix with
-// all earlier entries is its longest common prefix with its predecessor.
-func countNodesString(sorted []string) int {
-	count := 1
-	for i, s := range sorted {
-		p := 0
-		if i > 0 {
-			prev := sorted[i-1]
-			for p < len(s) && p < len(prev) && s[p] == prev[p] {
-				p++
-			}
-		}
-		count += len(s) - p
+// allocTable reserves the transition table for a node count. The comparison
+// is done before multiplying, because on a 32-bit int the product would
+// overflow and pass the check.
+func (m *Matcher) allocTable(nodes int) error {
+	stride := m.width + metaRow
+	if nodes > math.MaxInt32/stride {
+		return ErrTooLarge
 	}
-	return count
+	m.table = make([]int32, nodes*stride)
+	return nil
 }
 
-// countNodesBytes is countNodesString for a sorted [][]byte dictionary.
-func countNodesBytes(sorted [][]byte) int {
+// countNodes returns the number of states a sorted dictionary needs: its
+// number of distinct prefixes, plus the root. Sorting makes the count exact,
+// because in lexicographic order an entry's longest common prefix with all
+// earlier entries is its longest common prefix with its predecessor.
+func countNodes[E ~[]byte | ~string](sorted []E) int {
 	count := 1
 	for i, s := range sorted {
 		p := 0
@@ -158,10 +161,12 @@ func (b blices) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 // means "no child": the root's row is at offset 0, so it is never a child.
 // link then rewrites them into a complete goto table.
 func (m *Matcher) buildTrie(dictionary [][]byte) error {
+	limit := m.cfg.limit()
+
 	var present [maxchar]bool
 	for _, blice := range dictionary {
 		for _, b := range blice {
-			if int(b) >= m.cfg.Limit {
+			if int(b) >= limit {
 				return m.cfg.ErrRange
 			}
 			present[b] = true
@@ -172,15 +177,11 @@ func (m *Matcher) buildTrie(dictionary [][]byte) error {
 	sorted := append(make(blices, 0, len(dictionary)), dictionary...)
 	sort.Sort(sorted)
 
-	stride := m.width + metaRow
-	// Compare before multiplying: on a 32-bit int the product would overflow
-	// and pass the check.
-	nodes := countNodesBytes(sorted)
-	if nodes > math.MaxInt32/stride {
-		return ErrTooLarge
+	if err := m.allocTable(countNodes(sorted)); err != nil {
+		return err
 	}
-	m.table = make([]int32, nodes*stride)
 
+	stride := m.width + metaRow
 	free := int32(stride)
 	for _, blice := range sorted {
 		cur := 0
@@ -208,10 +209,12 @@ func (m *Matcher) buildTrie(dictionary [][]byte) error {
 
 // buildTrieString builds the fundamental trie structure from a []string
 func (m *Matcher) buildTrieString(dictionary []string) error {
+	limit := m.cfg.limit()
+
 	var present [maxchar]bool
 	for _, s := range dictionary {
 		for i := 0; i < len(s); i++ {
-			if int(s[i]) >= m.cfg.Limit {
+			if int(s[i]) >= limit {
 				return m.cfg.ErrRange
 			}
 			present[s[i]] = true
@@ -222,15 +225,11 @@ func (m *Matcher) buildTrieString(dictionary []string) error {
 	sorted := append(make([]string, 0, len(dictionary)), dictionary...)
 	sort.Strings(sorted)
 
-	stride := m.width + metaRow
-	// Compare before multiplying: on a 32-bit int the product would overflow
-	// and pass the check.
-	nodes := countNodesString(sorted)
-	if nodes > math.MaxInt32/stride {
-		return ErrTooLarge
+	if err := m.allocTable(countNodes(sorted)); err != nil {
+		return err
 	}
-	m.table = make([]int32, nodes*stride)
 
+	stride := m.width + metaRow
 	free := int32(stride)
 	for _, s := range sorted {
 		cur := 0
@@ -494,7 +493,7 @@ func (m *Matcher) MatchString(in string) bool {
 
 // Compile creates a new Matcher using a list of []byte
 func Compile(dictionary [][]byte) (*Matcher, error) {
-	return fullByte.Compile(dictionary)
+	return Config{}.Compile(dictionary)
 }
 
 // MustCompile returns a Matcher or panics
@@ -509,7 +508,7 @@ func MustCompile(dictionary [][]byte) *Matcher {
 // CompileString creates a new Matcher used to match against a set
 // of strings (this is a helper to make initialization easy)
 func CompileString(dictionary []string) (*Matcher, error) {
-	return fullByte.CompileString(dictionary)
+	return Config{}.CompileString(dictionary)
 }
 
 // MustCompileString returns a Matcher or panics

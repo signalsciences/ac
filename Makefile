@@ -58,6 +58,12 @@ fuzz:
 bench:
 	go test -run '^$$' -bench . -benchmem ./...
 
+# The sort benchmarks are the only ones whose implementation changes with the
+# tag, so this runs those alone rather than the whole set twice.
+.PHONY: bench-tinygo
+bench-tinygo:
+	go test -tags tinygo -run '^$$' -bench Sort -benchmem .
+
 .PHONY: clean
 clean:
 	rm -rf $(BIN)

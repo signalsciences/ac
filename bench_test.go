@@ -13,6 +13,37 @@ var benchHaystacks = actest.Haystacks()
 
 var sinkMatcher *Matcher
 
+// BenchmarkSortStrings and BenchmarkSortBlices cover the sort a build does
+// before anything else. The tinygo build uses a different implementation, so
+// run these with -tags tinygo as well when changing either.
+func BenchmarkSortStrings(b *testing.B) {
+	for _, tc := range benchDicts {
+		b.Run(tc.Name, func(b *testing.B) {
+			b.ReportAllocs()
+			buf := make([]string, len(tc.Dict))
+			for i := 0; i < b.N; i++ {
+				copy(buf, tc.Dict)
+				sortStrings(buf)
+			}
+			sinkStrings = buf
+		})
+	}
+}
+
+func BenchmarkSortBlices(b *testing.B) {
+	for _, tc := range benchDicts {
+		b.Run(tc.Name, func(b *testing.B) {
+			b.ReportAllocs()
+			buf := make([][]byte, len(tc.Blob))
+			for i := 0; i < b.N; i++ {
+				copy(buf, tc.Blob)
+				sortBlices(buf)
+			}
+			sinkBlices = buf
+		})
+	}
+}
+
 func BenchmarkCompileString(b *testing.B) {
 	for _, tc := range benchDicts {
 		b.Run(tc.Name, func(b *testing.B) {

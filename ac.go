@@ -10,11 +10,9 @@
 package ac
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 )
 
 const maxchar = 256
@@ -147,13 +145,6 @@ func countNodes[E ~[]byte | ~string](sorted []E) int {
 	return count
 }
 
-// blices orders a [][]byte dictionary lexicographically.
-type blices [][]byte
-
-func (b blices) Len() int           { return len(b) }
-func (b blices) Less(i, j int) bool { return bytes.Compare(b[i], b[j]) < 0 }
-func (b blices) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-
 // buildTrie builds the fundamental trie structure from a set of
 // blices.
 //
@@ -174,8 +165,8 @@ func (m *Matcher) buildTrie(dictionary [][]byte) error {
 	}
 	m.setAlphabet(&present)
 
-	sorted := append(make(blices, 0, len(dictionary)), dictionary...)
-	sort.Sort(sorted)
+	sorted := append(make([][]byte, 0, len(dictionary)), dictionary...)
+	sortBlices(sorted)
 
 	if err := m.allocTable(countNodes(sorted)); err != nil {
 		return err
@@ -223,7 +214,7 @@ func (m *Matcher) buildTrieString(dictionary []string) error {
 	m.setAlphabet(&present)
 
 	sorted := append(make([]string, 0, len(dictionary)), dictionary...)
-	sort.Strings(sorted)
+	sortStrings(sorted)
 
 	if err := m.allocTable(countNodes(sorted)); err != nil {
 		return err

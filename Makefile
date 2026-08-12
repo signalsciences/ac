@@ -8,6 +8,7 @@ all: fmtcheck vet staticcheck test
 
 .PHONY: build
 build:
+	go build -tags tinygo ./...
 	go build ./...
 
 # gofmt -l lists the files needing formatting but exits 0 either way, so the
@@ -25,12 +26,16 @@ fmtcheck:
 fmt:
 	gofmt -w .
 
+# The tinygo-tagged files are checked first, so that the build cache is left
+# holding the untagged build that everything else uses.
 .PHONY: vet
 vet:
+	go vet -tags tinygo ./...
 	go vet ./...
 
 .PHONY: staticcheck
 staticcheck: $(BIN)/staticcheck
+	$(BIN)/staticcheck -tags tinygo ./...
 	$(BIN)/staticcheck ./...
 
 $(BIN)/staticcheck:
